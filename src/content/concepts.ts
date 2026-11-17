@@ -1,0 +1,97 @@
+import type { Concept, MediaAsset } from './types'
+
+// Kavramlar: dilden bağımsız anlam çapaları. Aynı anlamı taşıyan farklı dillerdeki kelimeler
+// aynı kavrama bağlanır ve aynı görseli paylaşır. Bir kelimenin farklı anlamları farklı kavramlara bağlanır.
+
+const c = (id: string, tr: string, en: string, imageNeed: Concept['imageNeed'] = 'concrete'): Concept => ({
+  id,
+  gloss: { tr, en },
+  imageNeed,
+  imageId: imageNeed === 'none' ? undefined : `img-${id}`,
+})
+
+export const CONCEPTS: Concept[] = [
+  // Temel
+  c('apple', 'elma', 'apple'),
+  c('water', 'su', 'water'),
+  c('bread', 'ekmek', 'bread'),
+  c('milk', 'süt', 'milk'),
+  c('book', 'kitap', 'book'),
+  c('house', 'ev', 'house'),
+  c('cat', 'kedi', 'cat'),
+  c('dog', 'köpek', 'dog'),
+  c('hello', 'merhaba (selamlaşma)', 'hello', 'scene'),
+  c('thanks', 'teşekkürler', 'thank you', 'scene'),
+  c('reserve', 'rezervasyon yapmak, yer ayırtmak', 'to reserve', 'scene'),
+  c('marriage', 'evlilik', 'marriage', 'situation'),
+  // Tekstil
+  c('fabric', 'kumaş', 'fabric'),
+  c('cotton', 'pamuk', 'cotton'),
+  c('yarn', 'iplik (dokuma/örme için)', 'yarn'),
+  c('cutting', 'kesim (kumaş kesimi)', 'cutting', 'scene'),
+  c('seam', 'dikiş yeri', 'seam'),
+  c('stitch', 'dikiş (tek batış/ilmek)', 'stitch'),
+  c('sewing-pattern', 'kalıp (dikiş kalıbı)', 'sewing pattern'),
+  c('motif', 'desen (süsleme deseni)', 'pattern, motif'),
+  c('defect', 'hata, kusur (üretim hatası)', 'defect'),
+  c('stain', 'leke', 'stain'),
+  c('shrinkage', 'çekme (yıkamada küçülme)', 'shrinkage', 'situation'),
+  c('quotation', 'fiyat teklifi', 'quotation', 'situation'),
+  c('price', 'fiyat', 'price'),
+  c('unit-price', 'birim fiyat', 'unit price', 'situation'),
+  c('order', 'sipariş', 'order', 'situation'),
+  c('moq', 'minimum sipariş miktarı', 'minimum order quantity', 'situation'),
+  c('delivery', 'teslimat', 'delivery', 'scene'),
+  c('delivery-date', 'teslim tarihi', 'delivery date', 'situation'),
+  c('delay', 'gecikme', 'delay', 'situation'),
+  c('shipment', 'sevkiyat', 'shipment', 'scene'),
+  c('sample', 'numune', 'sample'),
+]
+
+const ALT: Record<string, string> = {
+  apple: 'Kırmızı bir elma',
+  water: 'Su dolu bir bardak',
+  bread: 'Bir somun ekmek',
+  milk: 'Bir şişe süt',
+  book: 'Açık bir kitap',
+  house: 'Çatılı küçük bir ev',
+  cat: 'Oturan bir kedi',
+  dog: 'Oturan bir köpek',
+  hello: 'El sallayarak selamlaşan iki kişi',
+  thanks: 'Bir kişi diğerine paket veriyor, diğeri elini göğsüne koymuş',
+  reserve: 'Takvimde işaretli bir gün ve masa',
+  marriage: 'Birbirine geçmiş iki yüzük',
+  fabric: 'Katlanmış kumaş topu',
+  cotton: 'Açılmış pamuk kozası',
+  yarn: 'İplik makarası',
+  cutting: 'Kumaşı çizgi boyunca kesen makas',
+  seam: 'İki kumaş parçasını birleştiren dikiş hattı',
+  stitch: 'İğne ve kumaştaki tek tek dikişler',
+  'sewing-pattern': 'Kesik çizgili kâğıt dikiş kalıbı ve makas',
+  motif: 'Tekrarlayan çiçek desenli kumaş',
+  defect: 'Kumaşta işaretlenmiş bir dokuma hatası',
+  stain: 'Kumaş üzerinde koyu bir leke',
+  shrinkage: 'Yıkama sonrası küçülmüş tişört ve oklar',
+  quotation: 'Fiyat satırları olan bir teklif belgesi',
+  price: 'Fiyat etiketi',
+  'unit-price': 'Metre başına fiyat yazan etiket',
+  order: 'Onay işaretli sipariş formu',
+  moq: 'Üst üste yığılmış kumaş topları ve alt sınır çizgisi',
+  delivery: 'Kapıya kutu getiren kamyonet',
+  'delivery-date': 'Takvim ve teslimat kamyonu',
+  delay: 'Saat ve bekleyen kamyon',
+  shipment: 'Konteyner ve kutular',
+  sample: 'Kumaş numune kartı',
+}
+
+export const ASSETS: MediaAsset[] = CONCEPTS.filter((k) => k.imageId).map((k) => ({
+  id: k.imageId!,
+  kind: 'illustration',
+  conceptIds: [k.id],
+  render: k.id,
+  alt: ALT[k.id] ?? k.gloss.tr,
+  author: 'Filiz projesi (Claude tarafından çizilen özgün basit illüstrasyon)',
+  license: 'Proje içi özgün çizim; lisans kararı proje sahibine ait',
+  source: 'src/ui/illustrations.tsx',
+  status: 'original-illustration',
+}))
