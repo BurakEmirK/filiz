@@ -661,6 +661,10 @@ def main():
             for (wi, _, _), tr in zip(ex_jobs, mt.translate([j[2] for j in ex_jobs])):
                 words[wi]['x']['tr'] = tr
                 words[wi]['x']['trs'] = 'mt'
+        # Elle yapılan içerik düzeltmeleri (corrections.json) her yeniden üretimde uygulanır
+        from apply_corrections import apply_to_words, load_corrections, needed_ids, tatoeba_lookup
+        corr = load_corrections()
+        apply_to_words(lang, words, corr, tatoeba_lookup(lang, needed_ids(lang, corr)))
         write_lang(lang, words)
         summary[lang] = stats(words)
         log(f'{lang}: {summary[lang]}')

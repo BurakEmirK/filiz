@@ -48,12 +48,23 @@ export function recognize(sense: Sense, mode: 'audio' | 'text', rnd: () => numbe
   return { kind: 'choose-gloss', sense, options: shuffle([sense, ...content.glossDistractors(sense, 3, rnd)], rnd), mode, skill }
 }
 
+/** Kelimenin güvenilir biçimleri: sözlük biçimi ve onunla aynı iki harfle başlayan çekimler.
+ *  Açık veride "biçim" listesine karışan eski yazımlar, ağız biçimleri ve Roma rakamları (ör. "one" için "I",
+ *  "my" için "me") böylece boşluk sorusu üretmez. Düzensiz çekimlerin bir kısmı kaybolur; yanlış soru çıkmasından iyidir. */
+export function safeForms(sense: Sense): string[] {
+  const key = (x: string) => stripStress(x).toLocaleLowerCase(sense.lang)
+  const bare = (x: string) => key(x).normalize('NFD').replace(/\p{M}/gu, '')
+  const lemma = key(content.lemma(sense))
+  const head = bare(content.lemma(sense)).slice(0, 2)
+  return [...new Set([content.lemma(sense), ...sense.forms].filter(Boolean))].filter((f) => key(f) === lemma || (key(f).length >= 2 && bare(f).startsWith(head)))
+}
+
 /** Bir örnek cümlede hedef kelimenin geçtiği biçimi bulur (boşluk doldurma için). */
 export function findCloze(sense: Sense, exampleIndex: number): { before: string; answer: string; after: string; tr: string } | undefined {
   const ex = sense.examples[exampleIndex]
   if (!ex) return undefined
   const text = stripStress(ex.text)
-  const forms = [...sense.forms].filter(Boolean).sort((a, b) => b.length - a.length)
+  const forms = safeForms(sense).sort((a, b) => b.length - a.length)
   for (const f of forms) {
     const re = new RegExp(`(^|[^\\p{L}])(${stripStress(f).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})(?=[^\\p{L}]|$)`, 'iu')
     const m = re.exec(text)

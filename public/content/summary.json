@@ -3,29 +3,29 @@
  "langs": {
   "ru": {
    "words": 3200,
-   "curated": 0.007,
+   "curated": 0.011,
    "audio": 0.97,
    "example": 0.993,
    "example_tr_human": 0.84,
    "emoji": 0.113,
    "ipa": 0.998,
-   "pivot-en": 0.532,
+   "pivot-en": 0.531,
    "vikisozluk-tr": 0.276,
-   "yok": 0.039,
-   "mt": 0.146
+   "mt": 0.145,
+   "yok": 0.038
   },
   "hu": {
    "words": 3200,
-   "curated": 0.008,
+   "curated": 0.011,
    "audio": 0.52,
    "example": 0.965,
-   "example_tr_human": 0.323,
+   "example_tr_human": 0.324,
    "emoji": 0.101,
    "ipa": 0.999,
-   "pivot-en": 0.53,
+   "pivot-en": 0.529,
    "vikisozluk-tr": 0.162,
-   "yok": 0.042,
-   "mt": 0.259
+   "mt": 0.257,
+   "yok": 0.042
   },
   "fr": {
    "words": 3200,
@@ -55,14 +55,14 @@
   },
   "en": {
    "words": 3200,
-   "curated": 0.012,
+   "curated": 0.015,
    "audio": 0.993,
    "example": 0.997,
    "example_tr_human": 0.997,
    "emoji": 0.119,
    "ipa": 0.993,
-   "vikisozluk-en": 0.812,
-   "mt": 0.096,
+   "vikisozluk-en": 0.81,
+   "mt": 0.095,
    "pivot-en": 0.019,
    "vikisozluk-tr": 0.058,
    "yok": 0.003

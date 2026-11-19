@@ -10,19 +10,19 @@
   "words-6.json",
   "words-7.json"
  ],
- "built": "2026-11-19",
+ "built": "2026-11-20",
  "stats": {
   "words": 3200,
-  "curated": 0.008,
+  "curated": 0.011,
   "audio": 0.52,
   "example": 0.965,
-  "example_tr_human": 0.323,
+  "example_tr_human": 0.324,
   "emoji": 0.101,
   "ipa": 0.999,
-  "pivot-en": 0.53,
+  "pivot-en": 0.529,
   "vikisozluk-tr": 0.162,
-  "yok": 0.042,
-  "mt": 0.259
+  "mt": 0.257,
+  "yok": 0.042
  },
  "pos": {
   "noun": "isim",

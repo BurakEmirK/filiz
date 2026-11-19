@@ -162,7 +162,7 @@ export function essentialGrammar(sense: Sense): string | undefined {
   return parts.length ? parts.map(([k, v]) => `${k}: ${v}`).join(', ') : undefined
 }
 
-const TR_SOURCE_NOTE: Record<NonNullable<Example['trSource']>, string> = { human: '', mt: ' (makine çevirisi)', 'en-only': ' (İngilizce çeviri)' }
+const TR_SOURCE_NOTE: Record<NonNullable<Example['trSource']>, string> = { human: '', mt: ' (makine çevirisi)', 'en-only': ' (İngilizce çeviri)', fixed: ' (çeviri düzeltildi)' }
 
 export function ExampleBox({ text, tr, lang, trSource }: { text: string; tr?: string; lang: string; trSource?: Example['trSource'] }) {
   return (

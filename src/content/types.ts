@@ -46,7 +46,7 @@ export interface Example {
   /** Kaynak (ör. "tatoeba:12345", "vikisozluk") */
   src?: string
   /** Türkçe çevirinin kaynağı: insan çevirisi (Tatoeba), makine çevirisi veya yalnızca İngilizce */
-  trSource?: 'human' | 'mt' | 'en-only'
+  trSource?: 'human' | 'mt' | 'en-only' | 'fixed'
 }
 
 /** Sesin kaynağı ve lisans bilgisi (Wikimedia Commons dosyası) */

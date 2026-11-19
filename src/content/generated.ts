@@ -8,6 +8,8 @@ export interface GenMeaning {
   pos: string
   tr?: string | null
   ts?: string | null
+  /** 1 = elle gizlendi (yanlış/bozuk anlam; kimlik numaraları değişmesin diye silinmez) */
+  h?: number
 }
 
 export interface GenWord {
@@ -30,7 +32,7 @@ export interface GenWord {
   /** insan sesi (Wikimedia Commons) */
   a?: { u: string; f: string }
   /** örnek cümle */
-  x?: { t: string; tr?: string; en?: string; src: string; trs?: string }
+  x?: { t: string; tr?: string; en?: string; src: string; trs?: string /* 'mt' | 'fixed' */ }
   /** emoji */
   e?: string
 }
@@ -84,6 +86,7 @@ export function convertWords(lang: string, index: GenIndex, words: GenWord[], sk
     lexemes.push({ id: key, lang, lemma: w.w, pos: w.p, pronunciation: { stressed: w.s, translit: w.t, ipa: w.i } })
     const forms = [...new Set([lower, ...w.f])]
     w.m.slice(0, 3).forEach((m, i) => {
+      if (m.h && i > 0) return
       const posLabel = index.pos[m.pos] ?? m.pos
       const source: GlossSource = m.tr ? (GLOSS_SOURCES.includes(m.ts as GlossSource) ? (m.ts as GlossSource) : 'mt') : 'en-only'
       const sense: Sense = {
@@ -103,7 +106,7 @@ export function convertWords(lang: string, index: GenIndex, words: GenWord[], sk
                   text: w.x.t,
                   tr: w.x.tr ?? w.x.en ?? '',
                   src: w.x.src,
-                  trSource: w.x.tr ? (w.x.trs === 'mt' ? 'mt' : 'human') : 'en-only',
+                  trSource: w.x.tr ? (w.x.trs === 'mt' ? 'mt' : w.x.trs === 'fixed' ? 'fixed' : 'human') : 'en-only',
                 },
               ]
             : [],

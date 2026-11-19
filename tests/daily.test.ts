@@ -8,7 +8,7 @@ import { checkClosedAnswer, evaluatorState } from '../src/domain/evaluation'
 import { introducedToday, submitProduction } from '../src/domain/services'
 import type { LessonState, Profile } from '../src/domain/types'
 import { appendRetry, estimateMinutes, finishSession, MAX_RETRIES, planSession, SESSION_MAX_NEW, SESSION_TARGET } from '../src/screens/daily'
-import { fromDesc, legacyLessonSteps, lessonSteps, lessonStepsFor, toDesc } from '../src/screens/steps'
+import { findCloze, fromDesc, legacyLessonSteps, lessonSteps, lessonStepsFor, toDesc } from '../src/screens/steps'
 import { freshRepo } from './helpers'
 
 const DAY = 24 * 3600_000
@@ -264,5 +264,17 @@ describe('İçerik bildirimi ve yedek uyumluluğu', () => {
     const chosen = migrateProfile({ ...migrated, theme: 'kum' })
     expect(chosen.theme).toBe('kum')
     expect(defaultProfile('d').theme).toBe('civit')
+  })
+})
+
+describe('Boşluk doldurma yalnızca kelimenin gerçek biçimini boşaltır', () => {
+  it('sözlükteki tuhaf "biçimler" (ör. "one" için Roma rakamı "I") boşluk sorusu üretmez', () => {
+    const base = content.sense('en-cat')
+    const one = { ...base, id: 'x-one', lexemeId: 'x-lex-one', forms: ['one', 'i', 'ones'], examples: [{ id: 'e1', text: 'I have to go to sleep.', tr: 'Yatmaya gitmek zorundayım.' }] }
+    expect(findCloze(one, 0)).toBeUndefined()
+    const ok = { ...one, examples: [{ id: 'e2', text: 'I have one brother.', tr: 'Bir erkek kardeşim var.' }] }
+    expect(findCloze(ok, 0)?.answer).toBe('one')
+    const plural = { ...one, examples: [{ id: 'e3', text: 'These ones are mine.', tr: 'Bunlar benim.' }] }
+    expect(findCloze(plural, 0)?.answer).toBe('ones')
   })
 })

@@ -148,9 +148,16 @@ export class ContentRegistry {
     }
     return idx.get(wordKey(word, lang))
   }
-  /** Bir kelimenin diğer anlamları (aynı lexeme). */
+  /** Bir kelimenin diğer anlamları (aynı lexeme). Türkçe karşılığı aynı olan tekrarlar gösterilmez. */
   otherSenses(sense: Sense): Sense[] {
-    return [...this.senses.values()].filter((s) => s.lexemeId === sense.lexemeId && s.id !== sense.id)
+    const seen = new Set([this.gloss(sense).toLocaleLowerCase('tr')])
+    return [...this.senses.values()].filter((s) => {
+      if (s.lexemeId !== sense.lexemeId || s.id === sense.id) return false
+      const g = this.gloss(s).toLocaleLowerCase('tr')
+      if (seen.has(g)) return false
+      seen.add(g)
+      return true
+    })
   }
 
   languagesWithContent(): string[] {
