@@ -55,7 +55,7 @@ function ExploreInner() {
         }}
       >
         <label htmlFor="explore-q" className="sr-only">Kelime ara</label>
-        <input id="explore-q" className="input" type="search" enterKeyHint="search" placeholder={`${getLanguage(lang).nameTr} kelime veya Türkçe anlam ara`} value={q} onChange={(e) => setQ(e.target.value)} />
+        <input id="explore-q" className="input" type="search" enterKeyHint="search" placeholder="Kelime veya anlam ara" value={q} onChange={(e) => setQ(e.target.value)} />
         <button className="btn" type="submit">Ara</button>
       </form>
 

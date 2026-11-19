@@ -46,7 +46,7 @@ export function Onboarding() {
       <Player
         title="Kısa seviye kontrolü"
         steps={checkSteps}
-        ctx={{ repo, profile: draft, lang: draft.activeLang, context: 'core', source: 'lesson', recordOnlyCorrect: true }}
+        ctx={{ repo, profile: draft, lang: draft.activeLang, context: 'core', source: 'placement', recordOnlyCorrect: true }}
         showNextDue={false}
         finishLabel="Başla"
         finishExtra={(results) => (
