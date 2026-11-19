@@ -60,8 +60,7 @@ function prepareSession() {
 /** Tek ses bağlamı (Web Audio). Desteklenmiyorsa null: o zaman <audio> oynatıcısı kullanılır. */
 function audioCtx(): AudioContext | null {
   if (actx || instantOff || typeof window === 'undefined') return actx
-  const w = window as Window & { webkitAudioContext?: typeof AudioContext }
-  const C = w.AudioContext ?? w.webkitAudioContext
+  const C = typeof AudioContext !== 'undefined' ? AudioContext : (window as Window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext
   if (!C) return null
   prepareSession()
   try {
