@@ -89,6 +89,25 @@ describe('Uygulamaya yükleme', () => {
     expect(withCloze).toBeGreaterThan(0.85)
   })
 
+  it('curated/normalize: elle hazırlanmış kelime paketteki insan kaydını bulur; büyük harf ve noktalama fark etmez', async () => {
+    const reg = new ContentRegistry()
+    await reg.ensureLanguage('hu', fsFetcher)
+    const s = reg.wordSense('hu', 'Ház!')
+    expect(s).toBeDefined()
+    expect(s!.generated).toBeFalsy()
+    expect(reg.lemma(s!)).toBe('ház')
+    expect(s!.audio?.url).toMatch(/^https:\/\/upload\.wikimedia\.org\//)
+    expect(reg.wordSense('hu', 'A ház nagy.')).toBeUndefined() // cümle bir kelime değildir
+  })
+
+  it('before load: paket yüklenmeden önce de hata vermez (kayıt yok, cihaz sesi çalar)', () => {
+    // Not: elle hazırlanmış anlam nesneleri kayıt defterleri arasında ortaktır (önceki test onlara ses ekledi);
+    // bu yüzden yalnızca paketteki bir kelimeyle sınanır.
+    const reg = new ContentRegistry()
+    expect(() => reg.wordSense('hu', 'hogy')).not.toThrow()
+    expect(reg.wordSense('hu', 'hogy')).toBeUndefined()
+  })
+
   it('görseli olmayan kelimelerde anlam seçme alıştırması kurulur; seçenekler farklı anlamlı', async () => {
     const reg = new ContentRegistry()
     await reg.ensureLanguage('en', fsFetcher)

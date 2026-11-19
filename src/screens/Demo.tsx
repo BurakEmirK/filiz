@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { useApp } from '../app/context'
+import { useApp, useLangContent } from '../app/context'
 import { LANGUAGES } from '../content/languages'
 import { Dialog } from '../ui/components'
 import { BrandMark } from '../ui/icons'
@@ -15,7 +15,10 @@ export function DemoApp() {
   const [confirmExit, setConfirmExit] = useState(false)
   const seed = session.mode === 'guest' ? String(session.startedAt) : 'demo'
   const steps = useMemo(() => (lang ? demoSteps(lang, `${seed}-${lang}`) : []), [lang, seed])
+  // Kelime paketi yalnızca içerik içindir (kişisel veri değil): elle hazırlanmış kelimelere insan sesi kaydı ekler
+  const pack = useLangContent(lang ?? undefined)
 
+  if (lang && !pack.ready) return <p className="page muted">Hazırlanıyor…</p>
   if (lang) {
     return (
       <>

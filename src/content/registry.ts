@@ -5,6 +5,7 @@ import { LANGUAGES } from './languages'
 import { EN_CORE, EN_TEXTILE } from './packs/en'
 import { FR_CORE, ES_CORE, HU_CORE, TR_CORE } from './packs/others'
 import { RU_CORE, RU_TEXTILE } from './packs/ru'
+import { stripStress } from '../domain/text'
 import { isSoundSense, soundContent } from './sounds'
 import type { Concept, ContentPack, Lesson, Lexeme, MediaAsset, Sense, TaskSpec } from './types'
 
@@ -25,6 +26,7 @@ export class ContentRegistry {
   readonly indexes = new Map<string, GenIndex>()
   private loading = new Map<string, Promise<void>>()
   private glossIndex = new Map<string, Map<string, Sense[]>>()
+  private wordIndex = new Map<string, Map<string, Sense>>()
 
   constructor(readonly packs: ContentPack[] = PACKS, concepts: Concept[] = CONCEPTS, assets: MediaAsset[] = ASSETS) {
     for (const c of concepts) this.concepts.set(c.id, c)
@@ -86,6 +88,7 @@ export class ContentRegistry {
     for (const l of out.lessons) if (!this.lessons.has(l.id)) this.lessons.set(l.id, l)
     this.indexes.set(lang, index)
     this.glossIndex.delete(lang)
+    this.wordIndex.delete(lang)
   }
 
   // ---- Erişim ----
@@ -128,6 +131,22 @@ export class ContentRegistry {
   }
   lemma(sense: Sense): string {
     return this.lexemes.get(sense.lexemeId)?.lemma ?? sense.forms[0] ?? '—'
+  }
+  /** Yazılmış bir kelimenin anlamı (sesini bulmak için): elle hazırlanmış ya da paketten; kaydı olan
+   *  ve ilk anlam olan tercih edilir. Büyük/küçük harf, Rusça vurgu ve noktalama fark etmez. */
+  wordSense(lang: string, word: string): Sense | undefined {
+    let idx = this.wordIndex.get(lang)
+    if (!idx) {
+      idx = new Map()
+      const score = (s: Sense) => (s.audio ? 0 : 2) + (s.senseIndex === 1 ? 0 : 1)
+      for (const s of this.sensesForLang(lang)) {
+        const key = wordKey(this.lemma(s), lang)
+        const cur = idx.get(key)
+        if (!cur || score(s) < score(cur)) idx.set(key, s)
+      }
+      this.wordIndex.set(lang, idx)
+    }
+    return idx.get(wordKey(word, lang))
   }
   /** Bir kelimenin diğer anlamları (aynı lexeme). */
   otherSenses(sense: Sense): Sense[] {
@@ -206,6 +225,14 @@ export class ContentRegistry {
     }
     return (idx.get(this.gloss(sense).toLocaleLowerCase('tr')) ?? []).filter((s) => s.lexemeId !== sense.lexemeId)
   }
+}
+
+/** Kelime arama anahtarı: küçük harf, Rusça vurgu işareti ve baştaki/sondaki noktalama olmadan */
+function wordKey(word: string, lang: string): string {
+  return stripStress(word)
+    .replace(/[´́]/g, '')
+    .replace(/^[\s¿¡"«»„“(]+|[\s.,;:!?"«»“”)…]+$/g, '')
+    .toLocaleLowerCase(lang)
 }
 
 export function shuffle<T>(items: T[], rnd: () => number = Math.random): T[] {

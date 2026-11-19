@@ -67,11 +67,14 @@ export function StatusPill({ status }: { status: AxisStatus }) {
 /** Ses düğmesi: her zaman görünür. Önce insan kaydı, yoksa cihaz sesi. Çalmazsa bunu açıkça söyler. */
 export function AudioButton({ text, lang, recording, label = 'Dinle', big = false }: { text: string; lang: string; recording?: string; label?: string; big?: boolean }) {
   const [state, setState] = useState<'idle' | 'fail' | 'synthetic'>('idle')
+  // Kayıt verilmediyse kelimenin kaydı aranır; dokunma anında yeniden bakılır (paket sonradan yüklenmiş olabilir)
+  const findRecording = () => recording ?? content.wordSense(lang, text)?.audio?.url
   useEffect(() => {
-    void preloadRecording(recording)
-  }, [recording])
+    void preloadRecording(findRecording())
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [recording, lang, text])
   const onClick = () => {
-    play({ text, lang, recording }).then((o) => setState(o === 'failed' ? 'fail' : o === 'tts-no-voice' ? 'synthetic' : 'idle'))
+    play({ text, lang, recording: findRecording() }).then((o) => setState(o === 'failed' ? 'fail' : o === 'tts-no-voice' ? 'synthetic' : 'idle'))
   }
   return (
     <span className="audio-wrap">

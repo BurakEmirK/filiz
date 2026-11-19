@@ -220,10 +220,10 @@ function LetterStep({ step, onDone }: StepProps<Extract<Step, { kind: 'letter' }
       <div className="stack">
         <span className="small muted">Örnek kelimeler</span>
         {s.examples.map((e) => {
-          const known = [...content.senses.values()].find((x) => x.lang === s.lang && x.generated && x.senseIndex === 1 && content.lemma(x).toLocaleLowerCase(s.lang) === e.text.replace(/[´́¿?¡!]/g, '').toLocaleLowerCase(s.lang))
+          const known = content.wordSense(s.lang, e.text)
           return (
             <div className="row" key={e.id}>
-              <AudioButton text={e.text} lang={s.lang} recording={known?.audio?.url} />
+              <AudioButton text={e.text} lang={s.lang} />
               <span lang={s.lang} style={{ fontWeight: 650 }}>{e.text}</span>
               {known ? <span className="muted small">— {content.gloss(known)}</span> : null}
             </div>
@@ -452,6 +452,10 @@ export function Player({ title, steps, ctx, startAt = 0, onStep, onFinish, onClo
   }
 
   const senseIds = useMemo(() => [...new Set(steps.flatMap(stepSenseIds))], [steps])
+  // Dersteki kelimelerin insan kayıtları baştan indirilir: dokununca beklemeden çalar
+  useEffect(() => {
+    for (const id of senseIds.slice(0, 30)) void preloadRecording(content.senses.get(id)?.audio?.url)
+  }, [senseIds])
   useEffect(() => {
     if (!finished || !showNextDue) return
     ;(async () => {
