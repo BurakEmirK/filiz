@@ -23,7 +23,7 @@ uygulama gibi kullanılır. Mac gerekmez.
 iPad'de Apple Pencil ile yazı için: **Ayarlar → Apple Pencil → Karalama** açık; **Ayarlar → Genel → Klavye →
 Klavyeler** bölümünden Rusça (ve diğer diller) klavyesi ekli olmalı. Macarca Scribble'da desteklenmiyor.
 
-Ses çıkmazsa uygulamada **Ben → Araçlar → Ses testi** ekranını aç ve raporu kopyala.
+Ses çıkmazsa uygulamada **Profil → Yardım → Ses testi** ekranını aç ve raporu kopyala.
 
 ## 2. Bilgisayarda çalıştırma (Windows)
 
@@ -47,7 +47,7 @@ derleme yapar, sonra siteyi yayınlar. **Testlerden biri bile başarısız olurs
 
 - Ücretsiz GitHub planında Pages için depo herkese açıktır; öğrenme verilerin depoya hiç girmez, telefonunda kalır.
 - Verilerin uygulamanın **adresine** bağlı saklanır. Depo veya kullanıcı adı değişirse eski ilerleme yeni adreste
-  görünmez; değiştirmeden önce **Ben → Verilerin → Yedek al**.
+  görünmez; değiştirmeden önce **Profil → Yedekleme ve geri yükleme → Yedek al**.
 
 ## 4. Komutlar
 
@@ -64,18 +64,21 @@ derleme yapar, sonra siteyi yayınlar. **Testlerden biri bile başarısız olurs
 
 | Özellik | Durum |
 |---|---|
-| Bugün / Öğren / Kariyer / Kelimeler / Ben; iPhone alt sekme, iPad kenar çubuğu | Çalışıyor (tarayıcıda denendi) |
-| Dersler: tanıt → dinle → görsel/anlam seç → yaz → boşluk doldur → kendi cümleni kur → görev | Çalışıyor |
+| Üç bölüm: Bugün (tek düğmeyle günlük çalışma) / Keşfet (dersler, sesler, sektör, kelimeler, ek pratik) / Profil; iPhone alt sekme, iPad kenar çubuğu | Çalışıyor (tarayıcıda denendi) |
+| Günlük oturum: 8–12 adım, yarım kalırsa kaldığı yerden; yeni kelime = tanıt + tanıma; yazma ve boşluk doldurma tekrarlarda; günlük yeni kelime hedefi (bugün ilk kez tanışılanlar sayılır) | Çalışıyor (testli, tarayıcıda denendi) |
 | Her dilde en sık ~3200 kelime, 5'er kelimelik dersler, 50'şer kelimelik birimler, birim atlama kontrolü | Çalışıyor (testli) |
 | Sesler ve Harfler (6 dil); Rusçada iPad'de kalemle harf yazma alanı | Çalışıyor; kalem **iPad'de test edilmedi** |
 | Kariyer hedefi: kilometre taşları, gerçek çalışma hızına göre tahmini bitiş | Çalışıyor (testli) |
 | FSRS aralıklı tekrar, beceri bazlı; Günün Kelimesi; yeni öğe sayısının tekrar yüküne göre azalması | Çalışıyor (testli) |
 | Hata defteri, kişisel ifade koleksiyonu, yedek al / yükle | Çalışıyor |
-| Demo Modu (ayrı veritabanı; Ben → Araçlar) | Çalışıyor (testli) |
+| Demo Modu (ayrı veritabanı; Profil → Yardım; çıkışta "Telefonu sahibine ver" ekranı) | Çalışıyor (testli, tarayıcıda denendi) |
 | İnsan sesi kayıtları (Wikimedia), cihaz sesi yedeği, Ses testi ekranı | **iPhone'da test edilmedi** |
 | Tekstil terimleri (İngilizce, Rusça) | Örnek içerik |
-| Dilbilgisi / görev anlamı / doğallık için çevrimiçi değerlendirme | Entegrasyon bekliyor |
+| Dilbilgisi / görev anlamı / doğallık için çevrimiçi değerlendirme | Bağlı değil: cümleler "pratik cümlesi" olarak kaydedilir |
 | iPhone–iPad otomatik senkron, konuşma kaydı, haftalık kalıcılık kontrolü, gerçek hayat görevleri, diğer sektörlerin terimleri | Sonraki aşama |
+
+Arayüz ve kullanılabilirlik kuralları: [.claude/skills/filiz-usability/SKILL.md](.claude/skills/filiz-usability/SKILL.md).
+İlk 100 kelime içerik denetimi: [docs/content-review-2026-11-20.md](docs/content-review-2026-11-20.md).
 
 ## 6. Kelime paketleri
 
