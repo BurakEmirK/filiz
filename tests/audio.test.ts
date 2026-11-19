@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 // sınanan, src/ui/audio.ts'nin hangi yolla çaldığı ve bellekte kaç kayıt tuttuğudur.
 
 let started = 0
+let stopped = 0
 let mediaPlays = 0
 let decodeFails = false
 
@@ -21,7 +22,7 @@ class FakeAudioContext {
     return { duration: 1 }
   }
   createBufferSource() {
-    return { buffer: null, onended: null, connect() {}, start: () => void started++, stop() {} }
+    return { buffer: null, onended: null, connect() {}, start: () => void started++, stop: () => void stopped++ }
   }
 }
 
@@ -43,6 +44,7 @@ const url = (i: number) => `https://upload.wikimedia.org/x/${i}.mp3`
 
 beforeEach(() => {
   started = 0
+  stopped = 0
   mediaPlays = 0
   decodeFails = false
   vi.stubGlobal('window', globalThis)
@@ -80,6 +82,29 @@ describe('İnsan kaydı çalma', () => {
     expect(started).toBe(0)
     expect(mediaPlays).toBe(1)
     expect(a.audioLog[0].detail).toBe('oynatıcı')
+  })
+
+  it('resume hangs: ses bağlamı açılmazsa (iOS kesinti durumu) oynatıcıya geçer ve bundan sonra oynatıcıyı kullanır', async () => {
+    vi.useFakeTimers()
+    try {
+      const a = await freshAudio()
+      await a.preloadRecording(url(4))
+      // Bu bağlam hiç açılmıyor
+      ;(FakeAudioContext.prototype as unknown as { resume: () => Promise<void> }).resume = () => new Promise<void>(() => {})
+      const p = a.play({ text: 'ház', lang: 'hu', recording: url(4) })
+      await vi.advanceTimersByTimeAsync(a.RESUME_TIMEOUT_MS + 10)
+      expect(await p).toBe('recording')
+      expect(mediaPlays).toBe(1)
+      expect(stopped).toBe(1) // bağlam sonradan açılırsa kayıt ikinci kez çalmasın
+      expect(a.audioLog[0].detail).toBe('oynatıcı')
+      await a.play({ text: 'ház', lang: 'hu', recording: url(4) })
+      expect(mediaPlays).toBe(2)
+    } finally {
+      FakeAudioContext.prototype.resume = async function (this: FakeAudioContext) {
+        this.state = 'running'
+      }
+      vi.useRealTimers()
+    }
   })
 
   it('cap: çok sayıda kelime ekrandayken bellekte en fazla MAX_DECODED kayıt tutulur', async () => {

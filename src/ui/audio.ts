@@ -23,6 +23,8 @@ const CACHE = 'filiz-audio-v1'
 /** Bellekte çözülmüş tutulan en fazla kayıt (her biri birkaç yüz KB) */
 export const MAX_DECODED = 40
 const IDLE_MS = 5000
+/** Ses bağlamı bu sürede açılmazsa (ör. iOS'ta telefon görüşmesi sonrası) oynatıcıya geçilir */
+export const RESUME_TIMEOUT_MS = 1500
 const ready = new Map<string, string>() // kayıt adresi → yerel nesne adresi (blob)
 const pending = new Map<string, Promise<void>>()
 const decoded = new Map<string, AudioBuffer>() // en son kullanılan sonda (LRU)
@@ -127,7 +129,10 @@ export function preloadRecording(url?: string): Promise<void> {
 /** Çözülmüş kaydı anında çalar. Dokunuşun içinde, beklemeden çağrılmalı (iOS ses bağlamını ancak böyle açar). */
 function playInstant(target: AudioTarget & { recording: string }, buf: AudioBuffer, ctx: AudioContext): Promise<PlayOutcome> {
   try {
-    const resumed = ctx.state === 'running' ? Promise.resolve() : ctx.resume()
+    const resumed =
+      ctx.state === 'running'
+        ? Promise.resolve()
+        : Promise.race([ctx.resume(), new Promise<never>((_, reject) => setTimeout(() => reject(new Error('timeout')), RESUME_TIMEOUT_MS))])
     currentSource?.stop()
     sharedAudio?.pause()
     const src = ctx.createBufferSource()
@@ -145,6 +150,11 @@ function playInstant(target: AudioTarget & { recording: string }, buf: AudioBuff
       },
       () => {
         instantOff = true // bu cihazda ses bağlamı açılamıyor: bundan sonra oynatıcı
+        try {
+          src.stop() // bağlam sonradan açılırsa kayıt ikinci kez çalmasın
+        } catch {
+          /* zaten durmuş */
+        }
         return playMedia(target)
       },
     )
