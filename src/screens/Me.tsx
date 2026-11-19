@@ -2,11 +2,12 @@ import { useRef, useState } from 'react'
 import { useApp, useAsync } from '../app/context'
 import { LANGUAGES, getLanguage } from '../content/languages'
 import { getIndustry } from '../content/industries'
+import { content } from '../content/registry'
 import type { Cefr } from '../content/types'
 import type { BackupFile } from '../data/repo'
 import { computeProgress } from '../domain/services'
 import { SKILL_LABEL, type Profile, type Skill } from '../domain/types'
-import { Card, Chips, LangSwitcher, Progress, Seg } from '../ui/components'
+import { Card, Chips, Dialog, LangSwitcher, Progress, Seg } from '../ui/components'
 import { Icon } from '../ui/icons'
 
 const LEVELS: (Cefr | 'native')[] = ['native', 'A1', 'A2', 'B1', 'B2', 'C1', 'C2']
@@ -32,24 +33,15 @@ export const INTERESTS = [
 const toggle = (list: string[], v: string) => (list.includes(v) ? list.filter((x) => x !== v) : [...list, v])
 
 export function MeScreen() {
-  const { profile, updateProfile, startDemo } = useApp()
+  const { profile, updateProfile } = useApp()
   return (
     <div className="page">
       <div className="page-head">
         <div>
           <h1>Ben</h1>
-          <p>İlerleme, profil, ayarlar ve Demo Modu.</p>
+          <p>İlerleme, profil ve ayarlar.</p>
         </div>
       </div>
-      <Card title="Arkadaşına göster" icon={<Icon.users />} className="accent">
-        <p>
-          Demo Modu'nda misafir istediği dili seçip sıfırdan kısa bir deneme yapar. Senin kelimelerin, tekrarların, hataların ve istatistiklerin
-          değişmez; kişisel metinlerin görünmez. Çıkınca kaldığın yere dönersin.
-        </p>
-        <button className="btn btn-primary" onClick={() => void startDemo()}>
-          Demo Modu'nu başlat
-        </button>
-      </Card>
       <ProgressCard />
       <div className="grid-2">
         <ProfileCard profile={profile} update={updateProfile} />
@@ -57,16 +49,106 @@ export function MeScreen() {
         <AppearanceCard profile={profile} update={updateProfile} />
         <EvaluationCard />
         <DataCard />
+        <SourcesCard />
         <StatusCard />
       </div>
+      <OtherCard />
     </div>
+  )
+}
+
+/** Ses testi ve Demo Modu: sık kullanılmayan araçlar en altta tek satır */
+function OtherCard() {
+  const { startDemo } = useApp()
+  const [demoOpen, setDemoOpen] = useState(false)
+  return (
+    <Card title="Araçlar">
+      <div className="list">
+        <a className="list-item" href="#/sound-test" style={{ textDecoration: 'none', color: 'inherit' }}>
+          <span className="grow">
+            <b>Ses testi</b>
+            <div className="tiny muted">Telefonunda hangi dillerde ses çalıştığını kontrol et, raporu kopyala.</div>
+          </span>
+          <Icon.play />
+        </a>
+        <button className="list-item" onClick={() => setDemoOpen(true)}>
+          <span className="grow">
+            <b>Demo Modu</b>
+            <div className="tiny muted">Telefonu bir arkadaşına verirken</div>
+          </span>
+          <Icon.users />
+        </button>
+      </div>
+      <Dialog open={demoOpen} onClose={() => setDemoOpen(false)} title="Demo Modu">
+        <p>
+          Misafir istediği dili seçip sıfırdan kısa bir deneme yapar. Senin kelimelerin, tekrarların, hataların ve istatistiklerin değişmez; kişisel
+          metinlerin görünmez. Çıkınca kaldığın yere dönersin.
+        </p>
+        <button className="btn btn-primary" onClick={() => void startDemo()}>
+          Demo Modu'nu başlat
+        </button>
+      </Dialog>
+    </Card>
+  )
+}
+
+const SRC_LABEL: Record<string, string> = {
+  'vikisozluk-tr': 'Türkçe Vikisözlük',
+  'vikisozluk-en': 'İng. Vikisözlük çevirisi',
+  'pivot-en': 'İngilizce üzerinden',
+  mt: 'makine çevirisi',
+  curated: 'elle düzeltildi',
+  yok: 'Türkçesi yok',
+}
+
+function SourcesCard() {
+  const { profile } = useApp()
+  const [lang, setLang] = useState(profile.activeLang)
+  const idx = content.indexes.get(lang)
+  const pct = (v?: number) => `%${Math.round((v ?? 0) * 100)}`
+  return (
+    <Card title="Kaynaklar ve lisanslar" action={<LangSwitcher value={lang} options={profile.targetLanguages} onChange={setLang} />}>
+      {idx ? (
+        <div className="stack small">
+          <p>
+            <b>{idx.count}</b> sık kelime ({idx.built} tarihinde işlendi).
+          </p>
+          <ul style={{ margin: 0, paddingLeft: 18 }}>
+            <li>İnsan sesi kaydı: {pct(idx.stats.audio)}</li>
+            <li>Örnek cümle: {pct(idx.stats.example)} (Türkçe insan çevirisiyle: {pct(idx.stats.example_tr_human)})</li>
+            <li>
+              Türkçe anlam kaynağı:{' '}
+              {Object.entries(SRC_LABEL)
+                .filter(([k]) => idx.stats[k])
+                .map(([k, l]) => `${l} ${pct(idx.stats[k])}`)
+                .join(', ')}
+            </li>
+            <li>Emoji görseli: {pct(idx.stats.emoji)}</li>
+          </ul>
+        </div>
+      ) : (
+        <p className="small muted">Bu dilin kelime paketi henüz yüklenmedi (dili seçip Öğren'i açınca yüklenir).</p>
+      )}
+      <ul className="tiny muted" style={{ margin: 0, paddingLeft: 18 }}>
+        <li>Kelime sıklığı: wordfreq (R. Speer ve ark.) — CC BY-SA 4.0</li>
+        <li>Anlamlar, çekimler, IPA, ses adresleri: Vikisözlük (Wiktextract / kaikki.org) — CC BY-SA</li>
+        <li>Örnek cümleler: Tatoeba — CC BY 2.0 FR</li>
+        <li>Ses kayıtları: Wikimedia Commons (çoğu Lingua Libre) — lisans dosya sayfasında</li>
+        <li>Makine çevirisi: Argos Translate modeli (bilgisayarda, ücretsiz)</li>
+        <li>Emoji adları: emojibase (MIT, Unicode CLDR)</li>
+      </ul>
+      <p className="tiny muted">Bu içerikten türetilen kelime paketleri CC BY-SA 4.0 lisanslıdır. Uzman doğrulaması yoktur.</p>
+    </Card>
   )
 }
 
 function ProgressCard() {
   const { repo, profile, dataVersion } = useApp()
   const [lang, setLang] = useState(profile.activeLang)
-  const { data: p } = useAsync(() => computeProgress(repo, lang), [lang, dataVersion])
+  const { data: p } = useAsync(async () => {
+    await content.ensureLanguage(lang).catch(() => undefined)
+    return computeProgress(repo, lang)
+  }, [lang, dataVersion])
   const skills: Skill[] = ['recognizeText', 'recognizeAudio', 'write', 'produce']
   return (
     <Card title="İlerleme" icon={<Icon.flame />} action={<LangSwitcher value={lang} options={profile.targetLanguages} onChange={setLang} />}>
@@ -99,7 +181,7 @@ function ProgressCard() {
               ))}
             </tbody>
           </table>
-          <p className="tiny muted">"Kendiliğinden üretme" çevrimiçi değerlendirme bağlanınca (Aşama 2) izlenmeye başlayacak. "Güçlü" = tahmini hafıza kararlılığı 21 günün üstünde; bir sertifika veya resmî seviye değildir.</p>
+          <p className="tiny muted">"Kendiliğinden üretme" çevrimiçi değerlendirme bağlanınca (sonraki aşama) izlenmeye başlayacak. "Güçlü" = tahmini hafıza kararlılığı 21 günün üstünde; bir sertifika veya resmî seviye değildir.</p>
           <h3>Sektörler (genel ilerlemeden ayrı)</h3>
           {p.industries.filter((i) => i.total > 0).map((i) => (
             <div key={i.industryId} className="stack" style={{ gap: 6 }}>
@@ -270,7 +352,7 @@ function EvaluationCard() {
       <p><span className="pill info">Entegrasyon bekliyor</span></p>
       <p className="small">
         Şu an cihaz yalnızca basit kontrolleri yapar (hedef kelime geçiyor mu, kapalı cevaplar). Dilbilgisi, görev anlamı ve doğallık kontrolü için
-        çevrimiçi değerlendirme Aşama 2'de bağlanacak. O zamana kadar cümlelerin "bekliyor" olarak saklanır.
+        çevrimiçi değerlendirme sonraki aşamada bağlanacak. O zamana kadar cümlelerin "bekliyor" olarak saklanır.
       </p>
       <p className="small">Bekleyen cümle: <b>{pending?.length ?? 0}</b></p>
       <p className="tiny muted">Çevrimiçi değerlendirme açıldığında, yalnızca değerlendirilecek cümle ve görev bilgisi sunucuna gönderilecek; bu her seferinde açıkça belirtilecek.</p>
@@ -306,7 +388,7 @@ function DataCard() {
     <Card title="Verilerin">
       <p className="small">
         İlerlemen bu cihazda saklanır ve internetsiz çalışır. iOS nadiren web uygulaması verisini silebilir; düzenli yedek almanı öneririm. iPhone–iPad
-        otomatik senkronu Aşama 2'de gelecek; şimdilik yedeği bir cihazdan alıp diğerine aktarabilirsin (kayıtlar birleştirilir, çoğalmaz).
+        otomatik senkronu sonraki aşamada gelecek; şimdilik yedeği bir cihazdan alıp diğerine aktarabilirsin (kayıtlar birleştirilir, çoğalmaz).
       </p>
       <div className="row">
         <button className="btn" onClick={exportData}><Icon.download /> Yedek al</button>
@@ -318,19 +400,20 @@ function DataCard() {
   )
 }
 
-const STATUS: { label: string; state: 'Çalışıyor' | 'Örnek içerik' | 'Entegrasyon bekliyor' | 'Test edilmedi' | 'Aşama 2' }[] = [
+const STATUS: { label: string; state: 'Çalışıyor' | 'Örnek içerik' | 'Entegrasyon bekliyor' | 'Test edilmedi' | 'Sonraki aşama' }[] = [
   { label: 'Dersler, tekrar planlayıcı, Günün Kelimesi', state: 'Çalışıyor' },
-  { label: '6 dilde kelimeler (10–20 kelimelik setler)', state: 'Örnek içerik' },
+  { label: 'Her dilde en sık ~3200 kelime (açık veriden, otomatik)', state: 'Çalışıyor' },
+  { label: 'Sesler ve Harfler (6 dil)', state: 'Çalışıyor' },
+  { label: 'Kariyer hedefi ve yol haritası', state: 'Çalışıyor' },
   { label: 'Tekstil terimleri (İngilizce, Rusça)', state: 'Örnek içerik' },
-  { label: 'Finans, BT, Mühendislik, Mimarlık', state: 'Aşama 2' },
+  { label: 'Finans, BT, Mühendislik, Mimarlık terimleri', state: 'Sonraki aşama' },
   { label: 'Cümle değerlendirme (dilbilgisi, anlam, doğallık)', state: 'Entegrasyon bekliyor' },
   { label: 'Demo Modu (veri izolasyonu)', state: 'Çalışıyor' },
-  { label: 'El yazısı (Scribble) + düzeltme adımı', state: 'Test edilmedi' },
-  { label: 'Model ses (cihazın sentetik sesi)', state: 'Test edilmedi' },
-  { label: 'Ana ekrana kurulum ve çevrimdışı çalışma (iPhone/iPad)', state: 'Test edilmedi' },
-  { label: 'iPhone–iPad senkronu', state: 'Aşama 2' },
-  { label: 'Konuşma kaydı, dinleme metinleri, haftalık kalıcılık kontrolü', state: 'Aşama 2' },
-  { label: 'Pencil ile harf çizme alıştırması', state: 'Aşama 2' },
+  { label: 'İnsan sesi kayıtları ve cihaz sesi (iPhone)', state: 'Test edilmedi' },
+  { label: 'El yazısı (Scribble) ve Pencil ile harf yazma (iPad)', state: 'Test edilmedi' },
+  { label: 'Ana ekrana kurulum ve çevrimdışı çalışma', state: 'Test edilmedi' },
+  { label: 'iPhone–iPad senkronu', state: 'Sonraki aşama' },
+  { label: 'Konuşma kaydı, dinleme metinleri, haftalık kalıcılık kontrolü', state: 'Sonraki aşama' },
 ]
 
 function StatusCard() {

@@ -4,11 +4,12 @@ import { SessionManager, type ActiveSession } from '../data/session'
 import { httpEvaluator, notConfiguredEvaluator } from '../domain/evaluation'
 import { processPending } from '../domain/services'
 import type { Profile } from '../domain/types'
-import { ErrorPracticeScreen, LessonScreen, ReviewScreen, SkipCheckScreen, WordOfDayScreen } from '../screens/Activities'
+import { ErrorPracticeScreen, LessonScreen, ReviewScreen, SkipCheckScreen, SkipUnitScreen, WordOfDayScreen } from '../screens/Activities'
 import { DemoApp } from '../screens/Demo'
 import { MeScreen } from '../screens/Me'
 import { Onboarding } from '../screens/Onboarding'
-import { IndustriesScreen, LearnScreen, TodayScreen } from '../screens/Tabs'
+import { SoundTestScreen } from '../screens/SoundTest'
+import { CareerScreen, IndustryScreen, LearnScreen, TodayScreen } from '../screens/Tabs'
 import { WordsScreen } from '../screens/Words'
 import { BrandMark, Icon } from '../ui/icons'
 import { AppContext, type AppState } from './context'
@@ -17,7 +18,7 @@ import { go, lastLearningRoute, useRoute } from './router'
 const TABS = [
   { id: 'today', label: 'Bugün', icon: Icon.today },
   { id: 'learn', label: 'Öğren', icon: Icon.learn },
-  { id: 'industries', label: 'Sektörler', icon: Icon.industry },
+  { id: 'career', label: 'Kariyer', icon: Icon.industry },
   { id: 'words', label: 'Kelimeler', icon: Icon.words },
   { id: 'me', label: 'Ben', icon: Icon.me },
 ]
@@ -150,8 +151,10 @@ function OwnerShell({ recovered, routePath, query }: { recovered: boolean; route
   if (head === 'wod') return <WordOfDayScreen />
   if (head === 'practice' && arg) return <ErrorPracticeScreen errorId={arg} />
   if (head === 'skipcheck' && arg) return <SkipCheckScreen lessonId={arg} />
+  if (head === 'skipunit' && arg && routePath[2]) return <SkipUnitScreen lang={arg} unit={Number(routePath[2])} />
 
-  const tab = TABS.some((t) => t.id === head) ? head : 'today'
+  // Kariyer sekmesi: hedef + sektör listesi; sektör ayrıntısı ve ses testi kendi sayfalarında
+  const tab = head === 'industries' ? 'career' : head === 'sound-test' ? 'me' : TABS.some((t) => t.id === head) ? head : 'today'
   return (
     <div className="shell">
       <nav className="nav" aria-label="Ana bölümler">
@@ -168,9 +171,10 @@ function OwnerShell({ recovered, routePath, query }: { recovered: boolean; route
       <main className="main">
         {tab === 'today' ? <TodayScreen recovered={recovered} /> : null}
         {tab === 'learn' ? <LearnScreen /> : null}
-        {tab === 'industries' ? <IndustriesScreen industryId={arg} langParam={query.get('lang')} /> : null}
+        {head === 'industries' && arg ? <IndustryScreen industryId={arg} langParam={query.get('lang')} /> : null}
+        {tab === 'career' && !(head === 'industries' && arg) ? <CareerScreen langParam={query.get('lang')} /> : null}
         {tab === 'words' ? <WordsScreen tab={(query.get('tab') as 'collection' | 'errors' | 'all') ?? 'collection'} /> : null}
-        {tab === 'me' ? <MeScreen /> : null}
+        {head === 'sound-test' ? <SoundTestScreen /> : tab === 'me' ? <MeScreen /> : null}
       </main>
     </div>
   )

@@ -7,6 +7,7 @@ export type Cefr = 'A1' | 'A2' | 'B1' | 'B2' | 'C1' | 'C2'
 /** İçeriğin doğruluk durumu. Hiçbir içerik uzman onayı olmadan "uzman onaylı" sayılmaz. */
 export type ValidationStatus =
   | 'ai-draft' // Yapay zekâ taslağı; uzman doğrulaması yok
+  | 'open-data' // Açık veriden (Vikisözlük, Tatoeba) otomatik işlendi; uzman doğrulaması yok
   | 'self-checked' // Proje sahibi kontrol etti
   | 'expert-reviewed' // Bir uzman / anadili konuşuru onayladı
 
@@ -41,8 +42,20 @@ export interface Example {
   id: string
   text: string
   tr: string
-  level: Cefr
+  level?: Cefr
+  /** Kaynak (ör. "tatoeba:12345", "vikisozluk") */
+  src?: string
+  /** Türkçe çevirinin kaynağı: insan çevirisi (Tatoeba), makine çevirisi veya yalnızca İngilizce */
+  trSource?: 'human' | 'mt' | 'en-only'
 }
+
+/** Sesin kaynağı ve lisans bilgisi (Wikimedia Commons dosyası) */
+export interface AudioRef {
+  url: string
+  file: string
+}
+
+export type GlossSource = 'vikisozluk-tr' | 'vikisozluk-en' | 'pivot-en' | 'mt' | 'en-only' | 'curated'
 
 export interface Pronunciation {
   /** Vurgu işaretli yazım (ör. Rusça "молоко́") */
@@ -59,7 +72,8 @@ export interface Lexeme {
   id: string
   lang: string
   lemma: string
-  pos: 'noun' | 'verb' | 'adj' | 'adv' | 'phrase' | 'interj' | 'noun-phrase'
+  /** Sözcük türü (elle hazırlanan içerikte sınırlı küme; açık veride Vikisözlük türleri: pron, prep, conj...) */
+  pos: string
   /** Dilbilgisel özellikler: cinsiyet, çoğul, fiil görünüşü vb. (dile özgü) */
   grammar?: Record<string, string>
   pronunciation?: Pronunciation
@@ -72,7 +86,22 @@ export interface Sense {
   conceptId: string
   /** 1 = önce öğretilen yaygın anlam. Diğer anlamlar sonra eklenir. */
   senseIndex: number
-  level: Cefr
+  /** Elle hazırlanmış içerikte CEFR seviyesi; sıklık listesinden gelenlerde yok (sıklık ≠ seviye) */
+  level?: Cefr
+  /** Sıklık sırası (1 = en sık) */
+  rank?: number
+  /** İngilizce anlam (açık veriden gelen kelimelerde) */
+  glossEn?: string
+  /** Türkçe anlamın nereden geldiği */
+  glossSource?: GlossSource
+  /** İnsan sesi kaydı (varsa) */
+  audio?: AudioRef
+  /** Somut isimler için emoji görseli (cihazın emoji yazı tipiyle gösterilir) */
+  emoji?: string
+  /** Sözcük türünün Türkçe adı */
+  posLabel?: string
+  /** Açık veriden otomatik üretilmiş kelime */
+  generated?: boolean
   topics: string[]
   industry?: string
   subtopic?: string
@@ -114,12 +143,14 @@ export interface Lesson {
   id: string
   lang: string
   title: string
-  track: 'core' | 'industry'
+  track: 'core' | 'industry' | 'sounds'
   industry?: string
   subtopic?: string
   order: number
   senseIds: string[]
   taskIds?: string[]
+  /** Sık kelime derslerinde birim numarası (50 kelimelik gruplar) */
+  unit?: number
 }
 
 export interface ContentPack {

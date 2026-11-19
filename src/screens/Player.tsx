@@ -1,19 +1,20 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { content } from '../content/registry'
+import { soundItem } from '../content/sounds'
 import type { Sense, TaskSpec } from '../content/types'
 import type { Repository } from '../data/repo'
 import type { ClosedCheck } from '../domain/evaluation'
 import { formatDue } from '../domain/planner'
 import { GRADE_LABEL } from '../domain/scheduler'
 import { submitChoice, submitClosed, submitProduction, submitSelfRating, type PreparedAnswer } from '../domain/services'
-import type { Attempt, Grade, Profile } from '../domain/types'
+import type { Attempt, Grade, Profile, Skill } from '../domain/types'
 import { AnswerInput } from '../ui/AnswerInput'
-import { speak, voiceFor } from '../ui/audio'
-import { AudioButton, ExampleBox, Progress, SenseImage, WordHeader } from '../ui/components'
+import { play, preloadRecording } from '../ui/audio'
+import { AudioButton, ExampleBox, GlossLine, Progress, SenseImage, WordHeader } from '../ui/components'
 import { EvaluationView } from '../ui/EvaluationView'
 import { Icon } from '../ui/icons'
-import { Illustration } from '../ui/illustrations'
-import { acceptedForWord, findCloze, type Step } from './steps'
+import { TraceCanvas } from '../ui/TraceCanvas'
+import { acceptedForWord, findCloze, stepSenseIds, type Step } from './steps'
 
 export interface PlayerCtx {
   repo: Repository
@@ -53,37 +54,76 @@ function IntroStep({ step, ctx, onDone }: StepProps<Extract<Step, { kind: 'intro
   const ex = s.examples[0]
   return (
     <>
-      <p className="muted small">Yeni kelime</p>
+      <p className="muted small">Yeni kelime{s.rank ? ` · sıklık sırası #${s.rank}` : ''}</p>
       <div className="sense-hero">
         <SenseImage sense={s} />
         <WordHeader sense={s} profile={ctx.profile} />
       </div>
-      <p>{s.explanation}</p>
-      {ex ? <ExampleBox text={ex.text} tr={ex.tr} lang={s.lang} /> : null}
+      {!s.generated && s.explanation ? <p>{s.explanation}</p> : null}
+      {ex ? <ExampleBox text={ex.text} tr={ex.tr} lang={s.lang} trSource={ex.trSource} /> : null}
       {s.usageNote ? <div className="notice">{s.usageNote}</div> : null}
+      {content.otherSenses(s).length && s.senseIndex === 1 ? (
+        <p className="tiny muted">Bu kelimenin başka anlamları da var; şimdi en yaygın anlamı öğreniyorsun.</p>
+      ) : null}
       <Continue onClick={() => onDone({ scored: false, senseIds: [s.id] })} />
     </>
   )
 }
 
+/** Dinleme modunda: büyük dinle düğmesi (kendiliğinden çalmaz). Ses çalmazsa okuyarak devam edilebilir. */
+function useListenMode(sense: Sense, mode: 'audio' | 'text') {
+  const [audioOk, setAudioOk] = useState(true)
+  const [readInstead, setReadInstead] = useState(false)
+  useEffect(() => {
+    void preloadRecording(sense.audio?.url)
+  }, [sense.audio?.url])
+  const listening = mode === 'audio' && !readInstead
+  const listen = () => {
+    play({ text: content.lemma(sense), lang: sense.lang, recording: sense.audio?.url }).then((o) => setAudioOk(o !== 'failed'))
+  }
+  const skill: Skill = listening ? 'recognizeAudio' : 'recognizeText'
+  const header = listening ? (
+    <>
+      <button className="big-audio" onClick={listen} aria-label={`Kelimeyi dinle (${sense.audio ? 'insan sesi kaydı' : 'cihaz sesi'})`}>
+        <Icon.play />
+      </button>
+      <p className="tiny muted" style={{ textAlign: 'center' }}>
+        {sense.audio ? 'İnsan sesi kaydı' : 'Cihaz sesi (sentetik)'} · Dinlemek için dokun
+      </p>
+      {!audioOk ? (
+        <div className="notice warn">
+          <span>
+            Ses çalınamadı.{' '}
+            <button className="btn btn-ghost" onClick={() => setReadInstead(true)}>
+              Okuyarak devam et
+            </button>
+          </span>
+        </div>
+      ) : (
+        <button className="btn btn-ghost" style={{ justifySelf: 'center' }} onClick={() => setReadInstead(true)}>
+          Ses çalmıyor mu? Okuyarak devam et
+        </button>
+      )}
+    </>
+  ) : (
+    <div className="word" lang={sense.lang} style={{ textAlign: 'center' }}>
+      {content.lexemes.get(sense.lexemeId)?.pronunciation?.stressed ?? content.lemma(sense)}
+    </div>
+  )
+  return { listening, skill, header }
+}
+
 function ChooseStep({ step, ctx, onDone }: StepProps<Extract<Step, { kind: 'choose' }>>) {
   const s = step.sense
-  const lemma = content.lemma(s)
-  const voice = Boolean(voiceFor(s.lang))
-  // Ses yoksa: kelimeyi okuyarak seçer; o zaman beceri "metinde tanıma" olarak kaydedilir
-  const audio = step.mode === 'audio' && voice
-  const skill = audio ? 'recognizeAudio' : 'recognizeText'
+  const { listening, skill, header } = useListenMode(s, step.mode)
   const [picked, setPicked] = useState<string | null>(null)
   const t0 = useRef(Date.now())
-  useEffect(() => {
-    if (audio) speak(lemma, s.lang)
-  }, [audio, lemma, s.lang])
   const pick = async (o: Sense) => {
     if (picked) return
     setPicked(o.id)
     if (ctx.recordOnlyCorrect && o.id !== s.id) return
     await submitChoice(ctx.repo, {
-      lang: s.lang, sense: s, skill, exerciseType: audio ? 'listen-choose' : 'choose-image', prompt: lemma, correct: o.id === s.id,
+      lang: s.lang, sense: s, skill, exerciseType: listening ? 'listen-choose' : 'choose-image', prompt: content.lemma(s), correct: o.id === s.id,
       elapsedMs: Date.now() - t0.current, context: ctx.context, industryId: ctx.industryId, source: ctx.source === 'review' ? 'review' : 'lesson',
       desiredRetention: ctx.profile.desiredRetention,
     })
@@ -91,24 +131,15 @@ function ChooseStep({ step, ctx, onDone }: StepProps<Extract<Step, { kind: 'choo
   const correct = picked === s.id
   return (
     <>
-      <p className="muted small">{audio ? 'Dinle ve doğru görseli seç' : 'Kelimenin anlamına uyan görseli seç'}</p>
-      {audio ? (
-        <button className="big-audio" onClick={() => speak(lemma, s.lang)} aria-label="Kelimeyi tekrar dinle (sentetik ses)">
-          <Icon.play />
-        </button>
-      ) : (
-        <div className="word" lang={s.lang} style={{ textAlign: 'center' }}>
-          {lemma}
-        </div>
-      )}
-      {step.mode === 'audio' && !voice ? <p className="tiny muted" style={{ textAlign: 'center' }}>Bu cihazda bu dil için ses bulunamadı; kelimeyi okuyarak seç.</p> : null}
+      <p className="muted small">{listening ? 'Dinle ve doğru görseli seç' : 'Kelimenin anlamına uyan görseli seç'}</p>
+      {header}
       <div className="choices four">
         {step.options.map((o) => {
-          const img = content.imageFor(o)!
           const state = picked ? (o.id === s.id ? 'correct' : o.id === picked ? 'wrong' : undefined) : undefined
+          const img = content.imageFor(o)
           return (
-            <button key={o.id} className="choice" data-state={state} disabled={Boolean(picked)} onClick={() => pick(o)} aria-label={img.alt}>
-              <Illustration name={img.render} alt={img.alt} />
+            <button key={o.id} className="choice" data-state={state} disabled={Boolean(picked)} onClick={() => pick(o)} aria-label={img?.alt ?? content.gloss(o)}>
+              <SenseImage sense={o} />
             </button>
           )
         })}
@@ -118,12 +149,97 @@ function ChooseStep({ step, ctx, onDone }: StepProps<Extract<Step, { kind: 'choo
           <div className={`notice ${correct ? 'good' : 'bad'}`} aria-live="polite">
             <span>
               {correct ? 'Doğru! ' : 'Bu sefer olmadı. '}
-              <b lang={s.lang}>{lemma}</b> = {content.gloss(s, ctx.profile.explanationLang)}
+              <b lang={s.lang}>{content.lemma(s)}</b> = {content.gloss(s, ctx.profile.explanationLang)}
             </span>
           </div>
           <Continue onClick={() => onDone({ scored: true, correct, senseIds: [s.id] })} />
         </>
       ) : null}
+    </>
+  )
+}
+
+/** Görseli olmayan kelimeler ve harfler için: kelimeyi gör/dinle → doğru anlamı seç */
+function ChooseGlossStep({ step, ctx, onDone }: StepProps<Extract<Step, { kind: 'choose-gloss' }>>) {
+  const s = step.sense
+  const isLetter = s.id.startsWith('snd:')
+  const { listening, skill, header } = useListenMode(s, isLetter ? 'text' : step.mode)
+  const [picked, setPicked] = useState<string | null>(null)
+  const t0 = useRef(Date.now())
+  const pick = async (o: Sense) => {
+    if (picked) return
+    setPicked(o.id)
+    if (ctx.recordOnlyCorrect && o.id !== s.id) return
+    await submitChoice(ctx.repo, {
+      lang: s.lang, sense: s, skill, exerciseType: listening ? 'listen-choose' : 'choose-image', prompt: content.lemma(s), correct: o.id === s.id,
+      elapsedMs: Date.now() - t0.current, context: ctx.context, industryId: ctx.industryId, source: ctx.source === 'review' ? 'review' : 'lesson',
+      desiredRetention: ctx.profile.desiredRetention,
+    })
+  }
+  const correct = picked === s.id
+  return (
+    <>
+      <p className="muted small">{isLetter ? 'Bu harf / kural nasıl okunur?' : listening ? 'Dinle ve doğru anlamı seç' : 'Bu kelimenin anlamı hangisi?'}</p>
+      {isLetter ? <div className="big-letter" lang={s.lang}>{content.lemma(s)}</div> : header}
+      <div className="gloss-choices">
+        {step.options.map((o) => {
+          const state = picked ? (o.id === s.id ? 'correct' : o.id === picked ? 'wrong' : undefined) : undefined
+          return (
+            <button key={o.id} className="btn gloss-choice" data-state={state} disabled={Boolean(picked)} onClick={() => pick(o)}>
+              {content.gloss(o, ctx.profile.explanationLang)}
+            </button>
+          )
+        })}
+      </div>
+      {picked ? (
+        <>
+          <div className={`notice ${correct ? 'good' : 'bad'}`} aria-live="polite">
+            <span>
+              {correct ? 'Doğru! ' : 'Bu sefer olmadı. '}
+              <b lang={s.lang}>{content.lemma(s)}</b> = {content.gloss(s, ctx.profile.explanationLang)}
+            </span>
+          </div>
+          <Continue onClick={() => onDone({ scored: true, correct, senseIds: [s.id] })} />
+        </>
+      ) : null}
+    </>
+  )
+}
+
+/** Sesler ve Harfler: harfi/kuralı tanıt, örnek kelimeleri dinlet; Kiril harflerinde kalemle yazma alanı */
+function LetterStep({ step, onDone }: StepProps<Extract<Step, { kind: 'letter' }>>) {
+  const s = step.sense
+  const info = soundItem(s.id)
+  const [trace, setTrace] = useState(false)
+  return (
+    <>
+      <p className="muted small">{info?.group.title ?? 'Sesler ve Harfler'}</p>
+      <div className="big-letter" lang={s.lang}>{content.lemma(s)}</div>
+      <p style={{ fontSize: '1.2em', textAlign: 'center', fontWeight: 650 }}>{s.customGloss}</p>
+      {s.explanation ? <div className="notice">{s.explanation}</div> : null}
+      <div className="stack">
+        <span className="small muted">Örnek kelimeler</span>
+        {s.examples.map((e) => {
+          const known = [...content.senses.values()].find((x) => x.lang === s.lang && x.generated && x.senseIndex === 1 && content.lemma(x).toLocaleLowerCase(s.lang) === e.text.replace(/[´́¿?¡!]/g, '').toLocaleLowerCase(s.lang))
+          return (
+            <div className="row" key={e.id}>
+              <AudioButton text={e.text} lang={s.lang} recording={known?.audio?.url} />
+              <span lang={s.lang} style={{ fontWeight: 650 }}>{e.text}</span>
+              {known ? <span className="muted small">— {content.gloss(known)}</span> : null}
+            </div>
+          )
+        })}
+      </div>
+      {info?.item.trace ? (
+        trace ? (
+          <TraceCanvas guide={content.lemma(s).split(' ')[0]} lang={s.lang} />
+        ) : (
+          <button className="btn btn-soft" onClick={() => setTrace(true)}>
+            <Icon.pen /> Bu harfi yazmayı dene (Apple Pencil veya parmak)
+          </button>
+        )
+      ) : null}
+      <Continue onClick={() => onDone({ scored: false, senseIds: [s.id] })} />
     </>
   )
 }
@@ -154,7 +270,7 @@ function FlashStep({ step, ctx, onDone }: StepProps<Extract<Step, { kind: 'flash
           <div className="sense-hero">
             <SenseImage sense={s} />
             <div className="stack">
-              <p style={{ fontSize: '1.2em', fontWeight: 650 }}>{content.gloss(s, ctx.profile.explanationLang)}</p>
+              <GlossLine sense={s} profile={ctx.profile} />
               {ex?.tr ? <p className="muted">{ex.tr}</p> : null}
             </div>
           </div>
@@ -187,7 +303,9 @@ function TypeStep({ step, ctx, onDone }: StepProps<Extract<Step, { kind: 'type' 
     })
     setResult(r.check)
   }
-  const hintText = cloze ? `Sözlük biçimi: ${content.lemma(s)}` : `İlk harf: ${accepted[0].slice(0, 1)}…`
+  const expected = cloze ? cloze.answer : content.lemma(s)
+  const hintText = cloze ? `Sözlük biçimi: ${content.lemma(s)}` : `İlk harf: ${expected.slice(0, 1)}…`
+  const alt = result?.correct && result.matched && result.matched !== expected
   return (
     <>
       <p className="muted small">{cloze ? 'Boşluğa uygun biçimi yaz' : 'Bu anlamın karşılığını yaz'}</p>
@@ -203,12 +321,14 @@ function TypeStep({ step, ctx, onDone }: StepProps<Extract<Step, { kind: 'type' 
       ) : (
         <div className="sense-hero">
           <SenseImage sense={s} />
-          <p style={{ fontSize: '1.3em', fontWeight: 650 }}>{content.gloss(s, ctx.profile.explanationLang)}</p>
+          <GlossLine sense={s} profile={ctx.profile} />
         </div>
       )}
       {!result ? (
         <>
-          {hints > 0 ? <div className="notice">{hintText}</div> : (
+          {hints > 0 ? (
+            <div className="notice">{hintText}</div>
+          ) : (
             <button className="btn btn-ghost" onClick={() => setHints(1)}>
               <Icon.hint /> İpucu
             </button>
@@ -219,7 +339,7 @@ function TypeStep({ step, ctx, onDone }: StepProps<Extract<Step, { kind: 'type' 
         <>
           <div className={`notice ${result.correct ? 'good' : result.nearMiss ? 'warn' : 'bad'}`} aria-live="polite">
             <div className="stack" style={{ gap: 6 }}>
-              <span>{result.correct ? 'Doğru!' : result.explanation}</span>
+              <span>{result.correct ? (alt ? `Bu da doğru. Bu derste öğrettiğimiz kelime: ${expected}` : 'Doğru!') : result.explanation}</span>
               {!result.correct && result.diff ? (
                 <span className="diff" aria-label="Senin yazdığınla doğrusu arasındaki fark">
                   {result.diff.map((d, i) => (
@@ -232,8 +352,8 @@ function TypeStep({ step, ctx, onDone }: StepProps<Extract<Step, { kind: 'type' 
             </div>
           </div>
           <div className="row">
-            <AudioButton text={result.matched ?? result.expected} lang={s.lang} />
-            <span lang={s.lang} style={{ fontWeight: 700 }}>{result.matched ?? result.expected}</span>
+            <AudioButton text={expected} lang={s.lang} recording={cloze ? undefined : s.audio?.url} />
+            <span lang={s.lang} style={{ fontWeight: 700 }}>{expected}</span>
           </div>
           {!result.correct ? <p className="tiny muted">Bu hata, hata defterine eklendi; ileride farklı bir örnekle tekrar çalışacaksın.</p> : null}
           <Continue onClick={() => onDone({ scored: true, correct: result.correct, senseIds: [s.id] })} />
@@ -331,7 +451,7 @@ export function Player({ title, steps, ctx, startAt = 0, onStep, onFinish, onClo
     if (next >= steps.length) onFinish?.(all)
   }
 
-  const senseIds = useMemo(() => [...new Set(steps.flatMap((s) => (s.kind === 'task' ? s.task.targetSenseIds : [s.sense.id])))], [steps])
+  const senseIds = useMemo(() => [...new Set(steps.flatMap(stepSenseIds))], [steps])
   useEffect(() => {
     if (!finished || !showNextDue) return
     ;(async () => {
@@ -366,6 +486,8 @@ export function Player({ title, steps, ctx, startAt = 0, onStep, onFinish, onClo
           <div className="player-inner" key={index}>
             {step.kind === 'intro' ? <IntroStep step={step} ctx={ctx} onDone={done} /> : null}
             {step.kind === 'choose' ? <ChooseStep step={step} ctx={ctx} onDone={done} /> : null}
+            {step.kind === 'choose-gloss' ? <ChooseGlossStep step={step} ctx={ctx} onDone={done} /> : null}
+            {step.kind === 'letter' ? <LetterStep step={step} ctx={ctx} onDone={done} /> : null}
             {step.kind === 'flash' ? <FlashStep step={step} ctx={ctx} onDone={done} /> : null}
             {step.kind === 'type' ? <TypeStep step={step} ctx={ctx} onDone={done} /> : null}
             {step.kind === 'produce' ? <ProductionStep ctx={ctx} onDone={done} senses={[step.sense]} prompt={step.sense.productionPrompt} /> : null}

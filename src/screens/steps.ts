@@ -1,4 +1,5 @@
 import { content, shuffle } from '../content/registry'
+import { isSoundSense } from '../content/sounds'
 import type { Lesson, Sense, TaskSpec } from '../content/types'
 import { normalize, stripStress } from '../domain/text'
 import type { ErrorNote, Skill, SkillMemory } from '../domain/types'
@@ -9,10 +10,16 @@ import type { ErrorNote, Skill, SkillMemory } from '../domain/types'
 export type Step =
   | { kind: 'intro'; sense: Sense }
   | { kind: 'choose'; sense: Sense; options: Sense[]; mode: 'audio' | 'text'; skill: Skill }
+  | { kind: 'choose-gloss'; sense: Sense; options: Sense[]; mode: 'audio' | 'text'; skill: Skill }
   | { kind: 'flash'; sense: Sense }
   | { kind: 'type'; sense: Sense; mode: 'word' | 'cloze'; exampleIndex?: number }
   | { kind: 'produce'; sense: Sense }
   | { kind: 'task'; task: TaskSpec }
+  | { kind: 'letter'; sense: Sense }
+
+export function stepSenseIds(s: Step): string[] {
+  return s.kind === 'task' ? s.task.targetSenseIds : [s.sense.id]
+}
 
 export function seeded(seed: string): () => number {
   let h = 1779033703 ^ seed.length
@@ -30,21 +37,25 @@ export function seeded(seed: string): () => number {
   }
 }
 
-function choose(sense: Sense, mode: 'audio' | 'text', rnd: () => number): Step {
-  const options = shuffle([sense, ...content.distractors(sense, 3, rnd)], rnd)
-  return { kind: 'choose', sense, options, mode, skill: mode === 'audio' ? 'recognizeAudio' : 'recognizeText' }
-}
-
 const hasImage = (s: Sense) => Boolean(content.imageFor(s))
+
+/** Tanıma alıştırması: çizimi varsa görsel seçme, yoksa anlam seçme. */
+function recognize(sense: Sense, mode: 'audio' | 'text', rnd: () => number): Step {
+  const skill: Skill = mode === 'audio' ? 'recognizeAudio' : 'recognizeText'
+  if (hasImage(sense)) {
+    return { kind: 'choose', sense, options: shuffle([sense, ...content.distractors(sense, 3, rnd)], rnd), mode, skill }
+  }
+  return { kind: 'choose-gloss', sense, options: shuffle([sense, ...content.glossDistractors(sense, 3, rnd)], rnd), mode, skill }
+}
 
 /** Bir örnek cümlede hedef kelimenin geçtiği biçimi bulur (boşluk doldurma için). */
 export function findCloze(sense: Sense, exampleIndex: number): { before: string; answer: string; after: string; tr: string } | undefined {
   const ex = sense.examples[exampleIndex]
   if (!ex) return undefined
   const text = stripStress(ex.text)
-  const forms = [...sense.forms].sort((a, b) => b.length - a.length)
+  const forms = [...sense.forms].filter(Boolean).sort((a, b) => b.length - a.length)
   for (const f of forms) {
-    const re = new RegExp(`(^|[^\\p{L}])(${f.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})(?=[^\\p{L}]|$)`, 'iu')
+    const re = new RegExp(`(^|[^\\p{L}])(${stripStress(f).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})(?=[^\\p{L}]|$)`, 'iu')
     const m = re.exec(text)
     if (m) {
       const start = m.index + m[1].length
@@ -54,18 +65,18 @@ export function findCloze(sense: Sense, exampleIndex: number): { before: string;
   return undefined
 }
 
-/** Ders: tanıt → tanı (ses/görsel) → yaz → cümlede kullan → kendi cümleni kur → görev */
+/** Ders: tanıt → dinle → anlamı/görseli seç → yaz → cümlede kullan → kendi cümleni kur → görev */
 export function lessonSteps(lesson: Lesson): Step[] {
+  if (lesson.track === 'sounds') return soundLessonSteps(lesson)
   const rnd = seeded(lesson.id)
   const senses = lesson.senseIds.map((id) => content.sense(id))
   const steps: Step[] = []
   senses.forEach((s, i) => {
     steps.push({ kind: 'intro', sense: s })
-    if (i > 0 && hasImage(senses[i - 1])) steps.push(choose(senses[i - 1], 'audio', rnd))
+    if (i > 0) steps.push(recognize(senses[i - 1], 'audio', rnd))
   })
-  const last = senses[senses.length - 1]
-  if (hasImage(last)) steps.push(choose(last, 'audio', rnd))
-  for (const s of shuffle(senses, rnd)) if (hasImage(s)) steps.push(choose(s, 'text', rnd))
+  steps.push(recognize(senses[senses.length - 1], 'audio', rnd))
+  for (const s of shuffle(senses, rnd)) steps.push(recognize(s, 'text', rnd))
   for (const s of senses) steps.push({ kind: 'type', sense: s, mode: 'word' })
   for (const s of senses.slice(0, 2)) if (findCloze(s, 0)) steps.push({ kind: 'type', sense: s, mode: 'cloze', exampleIndex: 0 })
   steps.push({ kind: 'produce', sense: senses[0] })
@@ -76,6 +87,15 @@ export function lessonSteps(lesson: Lesson): Step[] {
   return steps
 }
 
+/** Sesler ve Harfler dersi: her harfi tanıt (iPad'de yazma alanıyla), sonra harf → ses eşleştirme */
+export function soundLessonSteps(lesson: Lesson): Step[] {
+  const rnd = seeded(lesson.id)
+  const senses = lesson.senseIds.map((id) => content.sense(id))
+  const steps: Step[] = senses.map((s) => ({ kind: 'letter', sense: s }) as Step)
+  if (senses.length > 1) for (const s of shuffle(senses, rnd)) steps.push(recognize(s, 'text', rnd))
+  return steps
+}
+
 /** Tekrar oturumu: her beceri kendi alıştırma türüyle sınanır. */
 export function reviewSteps(due: SkillMemory[], resolve: (id: string) => Sense | undefined, limit = 20): Step[] {
   const rnd = seeded(`review-${due.map((d) => d.id).join()}`)
@@ -83,8 +103,8 @@ export function reviewSteps(due: SkillMemory[], resolve: (id: string) => Sense |
   for (const m of due.slice(0, limit)) {
     const s = resolve(m.senseId)
     if (!s) continue
-    if (m.skill === 'recognizeText') steps.push({ kind: 'flash', sense: s })
-    else if (m.skill === 'recognizeAudio') steps.push(hasImage(s) ? choose(s, 'audio', rnd) : { kind: 'flash', sense: s })
+    if (m.skill === 'recognizeText') steps.push(isSoundSense(s.id) ? recognize(s, 'text', rnd) : { kind: 'flash', sense: s })
+    else if (m.skill === 'recognizeAudio') steps.push(s.customGloss && !s.generated && !hasImage(s) ? { kind: 'flash', sense: s } : recognize(s, 'audio', rnd))
     else if (m.skill === 'write') {
       const alt = s.examples.length > 1 ? Math.floor(rnd() * s.examples.length) : 0
       steps.push(findCloze(s, alt) && rnd() < 0.5 ? { kind: 'type', sense: s, mode: 'cloze', exampleIndex: alt } : { kind: 'type', sense: s, mode: 'word' })
@@ -98,7 +118,7 @@ export function wordOfDaySteps(sense: Sense, related: Sense[], alreadyIntroduced
   const rnd = seeded(`wod-${sense.id}`)
   const steps: Step[] = []
   if (!alreadyIntroduced) steps.push({ kind: 'intro', sense })
-  if (hasImage(sense)) steps.push(choose(sense, 'audio', rnd))
+  steps.push(recognize(sense, 'audio', rnd))
   steps.push({ kind: 'type', sense, mode: 'word' })
   for (const r of related) steps.push({ kind: 'flash', sense: r })
   steps.push({ kind: 'produce', sense })
@@ -119,31 +139,44 @@ export function errorPracticeSteps(err: ErrorNote, sense: Sense): Step[] {
 /** "Bunu biliyorum, atla": kısa kontrol */
 export function skipCheckSteps(lesson: Lesson): Step[] {
   const rnd = seeded(`skip-${lesson.id}`)
-  return lesson.senseIds.map((id) => content.sense(id)).map((s) => (hasImage(s) ? choose(s, 'text', rnd) : { kind: 'flash' as const, sense: s }))
+  return lesson.senseIds.map((id) => recognize(content.sense(id), 'text', rnd))
+}
+
+/** Bir birimi (10 ders, 50 kelime) atlamak için 10 kelimelik kontrol */
+export function unitCheckSteps(lessons: Lesson[], seed: string): Step[] {
+  const rnd = seeded(seed)
+  const ids = shuffle(lessons.flatMap((l) => l.senseIds), rnd).slice(0, 10)
+  return ids.map((id) => recognize(content.sense(id), 'text', rnd))
 }
 
 /** Demo: dinle → görselle eşleştir → kelimeyi görselle eşleştir (3–5 dk hedef, kesin değil) */
 export function demoSteps(lang: string, seed: string): Step[] {
   const rnd = seeded(seed)
-  const pool = content.coreSenseOrder(lang).map((id) => content.sense(id)).filter((s) => content.concept(s.conceptId).imageNeed === 'concrete')
+  const pool = content
+    .coreLessons(lang)
+    .filter((l) => !l.id.startsWith('g-'))
+    .flatMap((l) => l.senseIds)
+    .map((id) => content.sense(id))
+    .filter((s) => content.concepts.get(s.conceptId)?.imageNeed === 'concrete')
   const picked = shuffle(pool, rnd).slice(0, 4)
   const steps: Step[] = []
   picked.forEach((s, i) => {
     steps.push({ kind: 'intro', sense: s })
-    if (i > 0) steps.push(choose(picked[i - 1], 'audio', rnd))
+    if (i > 0) steps.push(recognize(picked[i - 1], 'audio', rnd))
   })
-  steps.push(choose(picked[picked.length - 1], 'audio', rnd))
-  for (const s of shuffle(picked, rnd)) steps.push(choose(s, 'text', rnd))
+  steps.push(recognize(picked[picked.length - 1], 'audio', rnd))
+  for (const s of shuffle(picked, rnd)) steps.push(recognize(s, 'text', rnd))
   return steps
 }
 
-/** Kelime yazma alıştırmasında kabul edilen cevaplar */
+/** Kelime yazma alıştırmasında kabul edilen cevaplar: sözlük biçimi + aynı Türkçe anlamlı diğer kelimeler */
 export function acceptedForWord(sense: Sense): string[] {
   const lemma = content.lemma(sense)
   const lex = content.lexemes.get(sense.lexemeId)
   const multi = lex?.pos === 'interj' || lex?.pos === 'phrase' || lex?.pos === 'noun-phrase'
   const list = multi ? [lemma, ...sense.forms] : [lemma]
-  return [...new Set(list.map((x) => x))]
+  for (const other of content.sameGloss(sense)) list.push(content.lemma(other))
+  return [...new Set(list)]
 }
 
 export function senseTitle(s: Sense) {

@@ -1,9 +1,10 @@
-import { useEffect, useRef, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { GLOSS_SOURCE_LABEL } from '../content/generated'
 import { getLanguage } from '../content/languages'
 import { content } from '../content/registry'
-import type { Sense } from '../content/types'
+import type { Example, Sense } from '../content/types'
 import type { AxisStatus, Profile } from '../domain/types'
-import { speak, useVoice } from './audio'
+import { play, preloadRecording } from './audio'
 import { Icon } from './icons'
 import { Illustration } from './illustrations'
 
@@ -63,22 +64,40 @@ export function StatusPill({ status }: { status: AxisStatus }) {
   return <span className={`pill ${STATUS_CLASS[status]}`}>{STATUS_TEXT[status]}</span>
 }
 
-export function AudioButton({ text, lang, label = 'Dinle', big = false }: { text: string; lang: string; label?: string; big?: boolean }) {
-  const voice = useVoice(lang)
-  if (voice.checked && !voice.available) {
-    return <span className="pill warn" title="Bu cihazda bu dil için konuşma sesi bulunamadı">Ses yok</span>
+/** Ses düğmesi: her zaman görünür. Önce insan kaydı, yoksa cihaz sesi. Çalmazsa bunu açıkça söyler. */
+export function AudioButton({ text, lang, recording, label = 'Dinle', big = false }: { text: string; lang: string; recording?: string; label?: string; big?: boolean }) {
+  const [state, setState] = useState<'idle' | 'fail' | 'synthetic'>('idle')
+  useEffect(() => {
+    void preloadRecording(recording)
+  }, [recording])
+  const onClick = () => {
+    play({ text, lang, recording }).then((o) => setState(o === 'failed' ? 'fail' : o === 'tts-no-voice' ? 'synthetic' : 'idle'))
   }
   return (
-    <button type="button" className={big ? 'big-audio' : 'btn btn-soft btn-icon'} onClick={() => speak(text, lang)} aria-label={`${label}: sentetik ses`}>
-      <Icon.play />
-    </button>
+    <span className="audio-wrap">
+      <button type="button" className={big ? 'big-audio' : 'btn btn-soft btn-icon'} onClick={onClick} aria-label={`${label} (${recording ? 'insan sesi kaydı' : 'cihaz sesi'})`}>
+        <Icon.play />
+      </button>
+      {state === 'fail' ? (
+        <a className="tiny" href="#/sound-test">
+          Ses çalınamadı · Ses testi
+        </a>
+      ) : null}
+      {state === 'synthetic' ? <span className="tiny muted">Bu dilde cihaz sesi bulunamadı</span> : null}
+    </span>
   )
 }
 
+/** Anlamın görseli: elle çizilmiş illüstrasyon veya (açık veride) anlamla eşleşen emoji */
 export function SenseImage({ sense, size }: { sense: Sense; size?: number }) {
-  const img = content.imageFor(sense)
-  if (!img) return null
-  return <Illustration name={img.render} alt={img.alt} size={size} />
+  const v = content.visual(sense)
+  if (!v) return null
+  if (v.kind === 'illustration') return <Illustration name={v.asset.render} alt={v.asset.alt} size={size} />
+  return (
+    <div className="plate emoji" style={size ? { width: size, height: size } : { aspectRatio: '1' }} role="img" aria-label={`${content.gloss(sense)} (emoji)`}>
+      <span aria-hidden="true">{v.char}</span>
+    </div>
+  )
 }
 
 /** Kelime başlığı: hedef dildeki yazılış her zaman görünür; telaffuz yardımları ayara göre azalır. */
@@ -94,9 +113,9 @@ export function WordHeader({ sense, profile, showGloss = true, small = false }: 
         <span className={small ? 'word-sm' : 'word'} lang={sense.lang}>
           {display}
         </span>
-        <AudioButton text={lex?.lemma ?? sense.forms[0]} lang={sense.lang} />
+        <AudioButton text={lex?.lemma ?? sense.forms[0]} lang={sense.lang} recording={sense.audio?.url} />
       </div>
-      {aid === 'full' && pron && (pron.translit || pron.approx) ? (
+      {aid === 'full' && pron && (pron.translit || pron.approx || pron.ipa) ? (
         <div className="pron">
           {pron.translit ? (
             <span>
@@ -108,16 +127,41 @@ export function WordHeader({ sense, profile, showGloss = true, small = false }: 
               Yaklaşık söyleyiş: <b>{pron.approx}</b>
             </span>
           ) : null}
+          {pron.ipa && !small ? (
+            <span>
+              IPA: <b>{pron.ipa}</b>
+            </span>
+          ) : null}
         </div>
       ) : null}
       {aid === 'full' && pron?.note && !small ? <p className="tiny muted">{pron.note}</p> : null}
       {lang.script === 'Cyrillic' && aid !== 'none' && pron?.stressed && !small ? <p className="tiny muted">´ işareti vurgulu heceyi gösterir; normal metinlerde yazılmaz.</p> : null}
-      {showGloss ? <p style={{ fontSize: '1.1em' }}>{content.gloss(sense, profile.explanationLang)}</p> : null}
+      {showGloss ? <GlossLine sense={sense} profile={profile} /> : null}
     </div>
   )
 }
 
-export function ExampleBox({ text, tr, lang }: { text: string; tr?: string; lang: string }) {
+/** Türkçe anlam + (açık veride) İngilizce anlam ve Türkçenin kaynağı */
+export function GlossLine({ sense, profile }: { sense: Sense; profile: Profile }) {
+  return (
+    <div className="stack" style={{ gap: 2 }}>
+      <p style={{ fontSize: '1.1em' }}>
+        {sense.posLabel ? <span className="pill" style={{ marginRight: 6 }}>{sense.posLabel}</span> : null}
+        {content.gloss(sense, profile.explanationLang)}
+      </p>
+      {sense.generated && profile.explanationLang === 'tr' && sense.glossEn ? (
+        <p className="tiny muted">
+          İngilizce: {sense.glossEn}
+          {sense.glossSource && sense.glossSource !== 'en-only' ? ` · Türkçe: ${GLOSS_SOURCE_LABEL[sense.glossSource]}` : ''}
+        </p>
+      ) : null}
+    </div>
+  )
+}
+
+const TR_SOURCE_NOTE: Record<NonNullable<Example['trSource']>, string> = { human: '', mt: ' (makine çevirisi)', 'en-only': ' (İngilizce çeviri)' }
+
+export function ExampleBox({ text, tr, lang, trSource }: { text: string; tr?: string; lang: string; trSource?: Example['trSource'] }) {
   return (
     <div className="example">
       <div className="row" style={{ justifyContent: 'space-between', flexWrap: 'nowrap' }}>
@@ -126,23 +170,35 @@ export function ExampleBox({ text, tr, lang }: { text: string; tr?: string; lang
         </span>
         <AudioButton text={text} lang={lang} label="Cümleyi dinle" />
       </div>
-      {tr ? <span className="muted small">{tr}</span> : null}
+      {tr ? (
+        <span className="muted small">
+          {tr}
+          {trSource ? TR_SOURCE_NOTE[trSource] : ''}
+        </span>
+      ) : null}
     </div>
   )
 }
 
+const VALIDATION_LABEL: Record<Sense['validation'], string> = {
+  'ai-draft': 'yapay zekâ taslağı (uzman doğrulaması yok)',
+  'open-data': 'açık veriden otomatik işlendi (uzman doğrulaması yok)',
+  'self-checked': 'kendin kontrol ettin',
+  'expert-reviewed': 'uzman onaylı',
+}
+
 /** Bir anlamın tam kartı: görsel, açıklama, örnekler, eşdizimler, eşanlamlılar, diğer anlamlar, kaynak. */
-export function SenseDetail({ sense, profile }: { sense: Sense; profile: Profile }) {
-  const img = content.imageFor(sense)
+export function SenseDetail({ sense, profile, onLearnSense, learnedIds }: { sense: Sense; profile: Profile; onLearnSense?: (s: Sense) => void; learnedIds?: Set<string> }) {
+  const visual = content.visual(sense)
   const others = content.otherSenses(sense)
   const lex = content.lexemes.get(sense.lexemeId)
   return (
     <div className="stack">
       <div className="sense-hero">
-        {img ? <Illustration name={img.render} alt={img.alt} /> : <div />}
+        {visual ? <SenseImage sense={sense} /> : <div />}
         <WordHeader sense={sense} profile={profile} />
       </div>
-      <p>{sense.explanation}</p>
+      {!sense.generated && sense.explanation ? <p>{sense.explanation}</p> : null}
       {lex?.grammar ? (
         <p className="small muted">
           {Object.entries(lex.grammar)
@@ -151,7 +207,7 @@ export function SenseDetail({ sense, profile }: { sense: Sense; profile: Profile
         </p>
       ) : null}
       {sense.examples.map((e) => (
-        <ExampleBox key={e.id} text={e.text} tr={e.tr} lang={sense.lang} />
+        <ExampleBox key={e.id} text={e.text} tr={e.tr} lang={sense.lang} trSource={e.trSource} />
       ))}
       {sense.collocations?.length ? (
         <div>
@@ -175,13 +231,40 @@ export function SenseDetail({ sense, profile }: { sense: Sense; profile: Profile
       {sense.morphology ? <p className="small"><b>Kelime yapısı:</b> {sense.morphology}</p> : null}
       {others.length ? (
         <div className="notice warn">
-          Bu kelimenin başka anlamları da var: {others.map((o) => `${o.senseIndex}. ${content.gloss(o)}`).join('; ')}. Her anlam ayrı izlenir.
+          <div className="stack" style={{ gap: 6 }}>
+            <span>Bu kelimenin başka anlamları da var. Her anlam ayrı izlenir; önce yaygın anlam öğretilir.</span>
+            {others.map((o) => (
+              <div className="spread" key={o.id}>
+                <span>
+                  {o.senseIndex}. {o.posLabel ? `(${o.posLabel}) ` : ''}
+                  {content.gloss(o)}
+                </span>
+                {onLearnSense && !learnedIds?.has(o.id) ? (
+                  <button className="btn btn-soft" onClick={() => onLearnSense(o)}>
+                    Bu anlamı da öğren
+                  </button>
+                ) : learnedIds?.has(o.id) ? (
+                  <span className="pill good">Tekrarda</span>
+                ) : null}
+              </div>
+            ))}
+          </div>
         </div>
       ) : null}
       <p className="tiny muted">
-        Seviye {sense.level} · Kaynak: {sense.source} · Doğrulama: {sense.validation === 'ai-draft' ? 'yapay zekâ taslağı (uzman doğrulaması yok)' : sense.validation === 'self-checked' ? 'kendin kontrol ettin' : 'uzman onaylı'}
-        {img ? ` · Görsel: ${img.author}` : ''}
+        {sense.rank ? `Sıklık sırası #${sense.rank} · ` : sense.level ? `Seviye ${sense.level} · ` : ''}
+        Kaynak: {sense.source} · Doğrulama: {VALIDATION_LABEL[sense.validation]}
+        {visual?.kind === 'illustration' ? ` · Görsel: ${visual.asset.author}` : visual?.kind === 'emoji' ? ' · Görsel: emoji (otomatik eşleşme)' : ''}
       </p>
+      {sense.audio ? (
+        <p className="tiny muted">
+          Ses kaydı:{' '}
+          <a href={`https://commons.wikimedia.org/wiki/File:${encodeURIComponent(sense.audio.file)}`} target="_blank" rel="noreferrer">
+            {sense.audio.file}
+          </a>{' '}
+          (Wikimedia Commons; lisans dosya sayfasında)
+        </p>
+      ) : null}
     </div>
   )
 }

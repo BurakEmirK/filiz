@@ -1,0 +1,81 @@
+{
+ "built": "2026-11-19",
+ "langs": {
+  "ru": {
+   "words": 3200,
+   "curated": 0.007,
+   "audio": 0.97,
+   "example": 0.993,
+   "example_tr_human": 0.84,
+   "emoji": 0.113,
+   "ipa": 0.998,
+   "pivot-en": 0.532,
+   "vikisozluk-tr": 0.276,
+   "yok": 0.039,
+   "mt": 0.146
+  },
+  "hu": {
+   "words": 3200,
+   "curated": 0.008,
+   "audio": 0.52,
+   "example": 0.965,
+   "example_tr_human": 0.323,
+   "emoji": 0.101,
+   "ipa": 0.999,
+   "pivot-en": 0.53,
+   "vikisozluk-tr": 0.162,
+   "yok": 0.042,
+   "mt": 0.259
+  },
+  "fr": {
+   "words": 3200,
+   "pivot-en": 0.321,
+   "audio": 0.978,
+   "example": 0.992,
+   "example_tr_human": 0.704,
+   "emoji": 0.118,
+   "ipa": 0.995,
+   "vikisozluk-tr": 0.536,
+   "curated": 0.006,
+   "mt": 0.104,
+   "yok": 0.033
+  },
+  "es": {
+   "words": 3200,
+   "pivot-en": 0.578,
+   "audio": 0.007,
+   "example": 0.989,
+   "example_tr_human": 0.745,
+   "emoji": 0.109,
+   "ipa": 0.995,
+   "curated": 0.008,
+   "vikisozluk-tr": 0.22,
+   "mt": 0.155,
+   "yok": 0.039
+  },
+  "en": {
+   "words": 3200,
+   "curated": 0.012,
+   "audio": 0.993,
+   "example": 0.997,
+   "example_tr_human": 0.997,
+   "emoji": 0.119,
+   "ipa": 0.993,
+   "vikisozluk-en": 0.812,
+   "mt": 0.096,
+   "pivot-en": 0.019,
+   "vikisozluk-tr": 0.058,
+   "yok": 0.003
+  },
+  "tr": {
+   "words": 3200,
+   "yok": 0.068,
+   "audio": 0.416,
+   "example": 0.993,
+   "example_tr_human": 0.0,
+   "emoji": 0.112,
+   "ipa": 0.79,
+   "vikisozluk-tr": 0.932
+  }
+ }
+}

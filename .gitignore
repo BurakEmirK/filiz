@@ -7,3 +7,6 @@ dev-dist
 .env.*
 .wrangler
 .claude
+data-raw
+__pycache__
+*.pyc

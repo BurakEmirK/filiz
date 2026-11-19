@@ -270,6 +270,7 @@ describe('Kabul 8 — Çevrimdışı kullanım ve sonradan birleştirme veriyi k
 describe('Kabul 9 — Görseller öğretilen anlamla eşleşir', () => {
   it('görsel gerektiren her anlamın görseli kendi kavramına bağlı; aynı kelimenin farklı anlamları farklı görsel kullanır', () => {
     for (const sense of content.senses.values()) {
+      if (!sense.conceptId) continue // açık veri kelimeleri ve harfler: kavram/çizim yok (emoji ayrı testte)
       const concept = content.concept(sense.conceptId)
       if (concept.imageNeed === 'none') continue
       const img = content.imageFor(sense)

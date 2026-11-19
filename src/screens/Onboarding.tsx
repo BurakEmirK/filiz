@@ -65,7 +65,10 @@ export function Onboarding() {
     <>
       <div className="row"><BrandMark size={48} /><h1>Filiz'e hoş geldin</h1></div>
       <p>Kısa dersler, aralıklı tekrar ve kendi cümlelerini kurma. Birkaç soruyla başlayalım; hepsi sonradan değiştirilebilir.</p>
-      <div className="notice">Bu sürüm Aşama 1'dir: her dilde küçük örnek içerik var, tam müfredat değil.</div>
+      <div className="notice">
+        Her dilde en sık kullanılan ~3200 kelime, sesler ve harfler bölümü ve resimli başlangıç dersleri var. Kelimeler açık kaynaklardan otomatik
+        hazırlandı; uzman doğrulaması yok.
+      </div>
     </>,
     <>
       <h1>Hangi dilleri öğrenmek istiyorsun?</h1>

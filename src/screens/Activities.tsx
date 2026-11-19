@@ -1,12 +1,12 @@
 import { useEffect, useMemo } from 'react'
 import { go, rememberLearningRoute } from '../app/router'
-import { useApp, useAsync } from '../app/context'
+import { useApp, useAsync, useLangContent } from '../app/context'
 import { content } from '../content/registry'
-import type { Sense } from '../content/types'
+import type { Lesson, Sense } from '../content/types'
 import { formatDue } from '../domain/planner'
 import { getTodayPlan, personalSenseMap } from '../domain/services'
 import { Player, type PlayerCtx } from './Player'
-import { errorPracticeSteps, lessonSteps, reviewSteps, skipCheckSteps, wordOfDaySteps } from './steps'
+import { errorPracticeSteps, lessonSteps, reviewSteps, skipCheckSteps, unitCheckSteps, wordOfDaySteps } from './steps'
 
 // Tam ekran öğrenme etkinlikleri. Her biri adım adım kaydeder; kapatılırsa kaldığı yer korunur.
 
@@ -15,17 +15,34 @@ function useCtx(lang: string, extra: Partial<PlayerCtx> = {}): PlayerCtx {
   return { repo, profile, lang, context: 'core', source: 'lesson', ...extra }
 }
 
-function Loading() {
+function Loading({ text = 'Yükleniyor…' }: { text?: string }) {
   return (
     <div className="player">
       <div className="player-body">
-        <p className="muted" style={{ padding: 24 }}>Yükleniyor…</p>
+        <p className="muted" style={{ padding: 24 }}>{text}</p>
       </div>
     </div>
   )
 }
 
+/** Ders kimliğinden dili çıkarır (sık kelime dersleri: g-<dil>-<n>, ses dersleri: snd-<dil>-...) */
+function lessonLang(lessonId: string): string | undefined {
+  const m = /^(?:g|snd)-([a-z]{2})-/.exec(lessonId)
+  return m?.[1] ?? content.lessons.get(lessonId)?.lang
+}
+
+function backRoute(lesson: Lesson) {
+  return lesson.track === 'industry' ? `#/industries/${lesson.industry}?lang=${lesson.lang}` : '#/learn'
+}
+
 export function LessonScreen({ lessonId }: { lessonId: string }) {
+  const lang = lessonLang(lessonId)
+  const loaded = useLangContent(lang)
+  if (!loaded.ready) return <Loading text="Kelimeler yükleniyor…" />
+  return <LessonInner lessonId={lessonId} key={lessonId} />
+}
+
+function LessonInner({ lessonId }: { lessonId: string }) {
   const { repo, bump } = useApp()
   const lesson = content.lessons.get(lessonId)
   const steps = useMemo(() => (lesson ? lessonSteps(lesson) : []), [lesson])
@@ -48,11 +65,12 @@ export function LessonScreen({ lessonId }: { lessonId: string }) {
       steps={steps}
       ctx={ctx}
       startAt={startAt}
+      showNextDue={lesson.track !== 'sounds'}
       onStep={(next) => void save(next, next >= steps.length ? 'completed' : 'in-progress')}
       onFinish={() => rememberLearningRoute(null)}
       onClose={() => {
         bump()
-        go(lesson.track === 'industry' ? `#/industries/${lesson.industry}?lang=${lesson.lang}` : '#/learn')
+        go(backRoute(lesson))
       }}
     />
   )
@@ -63,6 +81,7 @@ export function ReviewScreen() {
   const lang = profile.activeLang
   const ctx = useCtx(lang, { context: 'review', source: 'review' })
   const data = useAsync(async () => {
+    await content.ensureLanguage(lang).catch(() => undefined)
     const due = await repo.dueSkills(lang)
     const map = await personalSenseMap(repo, lang)
     const all = await repo.skillsForLang(lang)
@@ -97,9 +116,11 @@ export function WordOfDayScreen() {
   const lang = profile.activeLang
   const ctx = useCtx(lang)
   const data = useAsync(async () => {
+    await content.ensureLanguage(lang).catch(() => undefined)
     const plan = await getTodayPlan(repo, profile, lang)
     if (!plan.wordOfDay) return null
-    const sense = content.sense(plan.wordOfDay.senseId)
+    const sense = content.senses.get(plan.wordOfDay.senseId)
+    if (!sense) return null
     const related = plan.wordOfDay.relatedSenseIds.map((id) => content.senses.get(id)).filter((s): s is Sense => Boolean(s))
     const introduced = (await repo.introducedSenseIds(lang)).has(sense.id)
     return wordOfDaySteps(sense, related, introduced)
@@ -118,6 +139,7 @@ export function ErrorPracticeScreen({ errorId }: { errorId: string }) {
   const data = useAsync(async () => {
     const err = await repo.db.errors.get(errorId)
     if (!err) return null
+    await content.ensureLanguage(err.lang).catch(() => undefined)
     const map = await personalSenseMap(repo, err.lang)
     const sense = content.resolve(err.senseId, map)
     return sense ? { err, sense, steps: errorPracticeSteps(err, sense) } : null
@@ -144,6 +166,13 @@ export function ErrorPracticeScreen({ errorId }: { errorId: string }) {
 }
 
 export function SkipCheckScreen({ lessonId }: { lessonId: string }) {
+  const lang = lessonLang(lessonId)
+  const loaded = useLangContent(lang)
+  if (!loaded.ready) return <Loading text="Kelimeler yükleniyor…" />
+  return <SkipCheckInner lessonId={lessonId} />
+}
+
+function SkipCheckInner({ lessonId }: { lessonId: string }) {
   const { repo, bump } = useApp()
   const lesson = content.lessons.get(lessonId)
   const steps = useMemo(() => (lesson ? skipCheckSteps(lesson) : []), [lesson])
@@ -162,14 +191,57 @@ export function SkipCheckScreen({ lessonId }: { lessonId: string }) {
       }}
       finishExtra={(results) =>
         results.every((r) => !r.scored || r.correct) ? (
-          <div className="notice good">Hepsini tanıdın. Ders "biliyorum" olarak işaretlendi; kelimeler yine de aralıklı tekrara alındı.</div>
+          <div className="notice good">Hepsini tanıdın. Ders "biliyorum" olarak işaretlendi; tanıdığın kelimeler yine de aralıklı tekrara alındı.</div>
         ) : (
           <div className="notice warn">Bazılarını tanımadın. Bu dersi yapman önerilir.</div>
         )
       }
       onClose={() => {
         bump()
-        go(lesson.track === 'industry' ? `#/industries/${lesson.industry}?lang=${lesson.lang}` : '#/learn')
+        go(backRoute(lesson))
+      }}
+    />
+  )
+}
+
+/** Birim kontrolü: 50 kelimelik bir birimden 10 kelime sorulur; en az 9 doğruysa birim "biliyorum" olarak işaretlenir. */
+export function SkipUnitScreen({ lang, unit }: { lang: string; unit: number }) {
+  const loaded = useLangContent(lang)
+  if (!loaded.ready) return <Loading text="Kelimeler yükleniyor…" />
+  return <SkipUnitInner lang={lang} unit={unit} />
+}
+
+function SkipUnitInner({ lang, unit }: { lang: string; unit: number }) {
+  const { repo, bump } = useApp()
+  const lessons = content.coreLessons(lang).filter((l) => l.unit === unit)
+  const steps = useMemo(() => unitCheckSteps(lessons, `unit-${lang}-${unit}`), [lessons, lang, unit])
+  const ctx = useCtx(lang, { recordOnlyCorrect: true })
+  if (!lessons.length) return <p className="page">Birim bulunamadı.</p>
+  const passed = (results: { scored: boolean; correct?: boolean }[]) => results.filter((r) => r.scored && r.correct).length >= Math.min(9, results.length)
+  return (
+    <Player
+      title={`Birim ${unit} kontrolü`}
+      steps={steps}
+      ctx={ctx}
+      showNextDue={false}
+      onFinish={async (results) => {
+        if (!passed(results)) return
+        const states = await repo.lessonStates(lang)
+        for (const l of lessons) {
+          if (states.some((s) => s.lessonId === l.id)) continue
+          await repo.saveLessonState({ lang, lessonId: l.id, track: 'core', status: 'skipped-known', step: 0 })
+        }
+      }}
+      finishExtra={(results) =>
+        passed(results) ? (
+          <div className="notice good">Bu birimi büyük ölçüde biliyorsun; dersleri "biliyorum" olarak işaretlendi. Doğru bildiğin kelimeler aralıklı tekrara alındı, diğerleri ileride karşına çıkabilir.</div>
+        ) : (
+          <div className="notice warn">10 kelimeden en az 9'unu bilmen gerekiyordu. Bu birimin derslerini yapman önerilir.</div>
+        )
+      }
+      onClose={() => {
+        bump()
+        go('#/learn')
       }}
     />
   )

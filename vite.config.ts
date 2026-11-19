@@ -39,6 +39,14 @@ export default defineConfig({
       },
       workbox: {
         globPatterns: ['**/*.{js,css,html,svg,png,woff2}'],
+        // Büyük kelime paketleri (dil başına ~2 MB) önceden değil, ilk kullanımda indirilir ve saklanır
+        runtimeCaching: [
+          {
+            urlPattern: ({ url }) => url.pathname.includes('/content/') && url.pathname.endsWith('.json'),
+            handler: 'StaleWhileRevalidate',
+            options: { cacheName: 'filiz-content', expiration: { maxEntries: 120 } },
+          },
+        ],
       },
     }),
   ],

@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { useApp, useAsync } from '../app/context'
+import { useMemo, useState } from 'react'
+import { useApp, useAsync, useLangContent } from '../app/context'
 import { go } from '../app/router'
 import { getLanguage } from '../content/languages'
 import { content } from '../content/registry'
@@ -171,35 +171,66 @@ function SkillDots({ senseId, skills }: { senseId: string; skills: SkillMemory[]
   )
 }
 
+const PAGE = 60
+
 function AllWords({ lang }: { lang: string }) {
-  const { repo, profile, dataVersion } = useApp()
+  const loaded = useLangContent(lang)
+  const { repo, profile, dataVersion, bump } = useApp()
   const { data: skills } = useAsync(() => repo.skillsForLang(lang), [lang, dataVersion])
   const [detail, setDetail] = useState<Sense | null>(null)
-  const senses = content.sensesForLang(lang)
-  const groups = [
-    { title: 'Genel', items: senses.filter((s) => !s.industry) },
-    { title: 'Tekstil', items: senses.filter((s) => s.industry === 'textile') },
-  ].filter((g) => g.items.length)
+  const [q, setQ] = useState('')
+  const [group, setGroup] = useState<'all' | 'learning' | 'textile'>('all')
+  const [limit, setLimit] = useState(PAGE)
+  const started = useMemo(() => new Set((skills ?? []).map((s) => s.senseId)), [skills])
+  const senses = useMemo(() => {
+    const all = content.sensesForLang(lang).filter((s) => s.senseIndex === 1 || started.has(s.id))
+    return all.sort((a, b) => (a.generated ? 1 : 0) - (b.generated ? 1 : 0) || (a.rank ?? 0) - (b.rank ?? 0))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lang, loaded.ready, started])
+  const filtered = useMemo(() => {
+    const needle = q.trim().toLocaleLowerCase('tr')
+    return senses.filter((s) => {
+      if (group === 'learning' && !started.has(s.id)) return false
+      if (group === 'textile' && s.industry !== 'textile') return false
+      if (!needle) return true
+      return [content.lemma(s), content.gloss(s), s.glossEn ?? ''].some((t) => t.toLocaleLowerCase('tr').includes(needle))
+    })
+  }, [senses, q, group, started])
+  const learnSense = async (s: Sense) => {
+    for (const k of ['recognizeText', 'write'] as Skill[]) await repo.seedSkill(lang, s.id, k, 'lesson')
+    bump()
+  }
   return (
     <>
-      <p className="tiny muted">Noktalar sırasıyla: metinde tanıma · seste anlama · yazma · kendiliğinden üretme. Gri: başlanmadı, sarı: öğreniliyor, mavi: tekrarda, yeşil: güçlü.</p>
-      {groups.map((g) => (
-        <Card key={g.title} title={g.title}>
-          <div className="list">
-            {g.items.map((s) => (
-              <button className="list-item" key={s.id} onClick={() => setDetail(s)}>
-                <span className="grow">
-                  <b lang={lang}>{content.lemma(s)}</b> <span className="muted small">· {content.gloss(s)}</span>
-                  {content.otherSenses(s).length ? <span className="pill" style={{ marginLeft: 6 }}>{s.senseIndex}. anlam</span> : null}
-                </span>
-                <SkillDots senseId={s.id} skills={skills ?? []} />
-              </button>
-            ))}
-          </div>
-        </Card>
-      ))}
+      <div className="search stack" style={{ gap: 8 }}>
+        <input className="input" type="search" placeholder="Kelime veya anlam ara" value={q} onChange={(e) => { setQ(e.target.value); setLimit(PAGE) }} aria-label="Kelime ara" />
+        <Seg label="Kelime grubu" value={group} onChange={(v) => { setGroup(v); setLimit(PAGE) }} options={[{ value: 'all', label: 'Tümü' }, { value: 'learning', label: 'Öğrendiklerim' }, { value: 'textile', label: 'Tekstil' }]} />
+      </div>
+      <p className="tiny muted">
+        {filtered.length} kelime. Noktalar sırasıyla: metinde tanıma · seste anlama · yazma · kendiliğinden üretme. Gri: başlanmadı, sarı: öğreniliyor, mavi: tekrarda, yeşil: güçlü.
+      </p>
+      <Card>
+        <div className="list">
+          {filtered.slice(0, limit).map((s) => (
+            <button className="list-item" key={s.id} onClick={() => setDetail(s)}>
+              <span className="grow">
+                {s.emoji ? <span aria-hidden="true">{s.emoji} </span> : null}
+                <b lang={lang}>{content.lemma(s)}</b> <span className="muted small">· {content.gloss(s)}</span>
+                {s.rank ? <span className="tiny muted"> #{s.rank}</span> : null}
+                {s.senseIndex > 1 ? <span className="pill" style={{ marginLeft: 6 }}>{s.senseIndex}. anlam</span> : null}
+              </span>
+              <SkillDots senseId={s.id} skills={skills ?? []} />
+            </button>
+          ))}
+        </div>
+        {filtered.length > limit ? (
+          <button className="btn" onClick={() => setLimit(limit + PAGE * 2)}>
+            Daha fazla göster ({filtered.length - limit} kaldı)
+          </button>
+        ) : null}
+      </Card>
       <Dialog open={Boolean(detail)} onClose={() => setDetail(null)} title={detail ? content.lemma(detail) : ''}>
-        {detail ? <SenseDetail sense={detail} profile={profile} /> : null}
+        {detail ? <SenseDetail sense={detail} profile={profile} onLearnSense={(s) => void learnSense(s)} learnedIds={started} /> : null}
       </Dialog>
     </>
   )

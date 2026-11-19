@@ -19,7 +19,7 @@ export function EvaluationView({ attempt }: { attempt: Attempt }) {
         <div className="notice">
           <span>
             <b>Değerlendirme bekliyor.</b> Cevabın kaydedildi. Dilbilgisi ve doğallık kontrolü için çevrimiçi değerlendirme gerekiyor; bu
-            henüz bağlı değil (Aşama 2). O yüzden şimdilik "doğru" ya da "yanlış" demiyorum.
+            henüz bağlı değil (sonraki aşama). O yüzden şimdilik "doğru" ya da "yanlış" demiyorum.
           </span>
         </div>
       ) : null}

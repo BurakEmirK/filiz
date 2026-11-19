@@ -52,6 +52,20 @@ export interface Profile extends SyncFields {
   pronunciationAid: Record<string, 'full' | 'stress' | 'none'>
   /** Çevrimiçi değerlendirme sunucusu (Aşama 2). Boşsa değerlendirme "bekliyor" kalır. */
   evaluationEndpoint: string
+  /** Kariyer hedefi (isteğe bağlı) */
+  career?: CareerGoal
+}
+
+export interface CareerGoal {
+  /** Hedefin kendi cümlelerinle tanımı, ör. "Rusça ile tekstil ihracatında çalışmak" */
+  title: string
+  lang: string
+  industryId?: string
+  /** Hedeflenen sık kelime sayısı (500 / 1000 / 2000 / 3000) */
+  targetWords: number
+  /** yyyy-mm-dd */
+  targetDate: string
+  createdAt: number
 }
 
 export interface LanguageTrack extends SyncFields {
@@ -73,7 +87,7 @@ export interface LessonState extends SyncFields {
   id: string // `${lang}|${lessonId}`
   lang: string
   lessonId: string
-  track: 'core' | 'industry'
+  track: 'core' | 'industry' | 'sounds'
   industryId?: string
   status: 'in-progress' | 'completed' | 'skipped-known'
   step: number

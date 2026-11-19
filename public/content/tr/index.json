@@ -1,0 +1,43 @@
+{
+ "lang": "tr",
+ "count": 3200,
+ "chunks": [
+  "words-1.json",
+  "words-2.json",
+  "words-3.json",
+  "words-4.json",
+  "words-5.json",
+  "words-6.json",
+  "words-7.json"
+ ],
+ "built": "2026-11-19",
+ "stats": {
+  "words": 3200,
+  "yok": 0.068,
+  "audio": 0.416,
+  "example": 0.993,
+  "example_tr_human": 0.0,
+  "emoji": 0.112,
+  "ipa": 0.79,
+  "vikisozluk-tr": 0.932
+ },
+ "pos": {
+  "noun": "isim",
+  "verb": "fiil",
+  "adj": "sıfat",
+  "adv": "zarf",
+  "pron": "zamir",
+  "prep": "edat",
+  "conj": "bağlaç",
+  "det": "belirleyici",
+  "num": "sayı",
+  "particle": "parçacık",
+  "intj": "ünlem",
+  "article": "tanımlık",
+  "postp": "edat",
+  "contraction": "kısaltılmış biçim",
+  "phrase": "kalıp",
+  "prep_phrase": "edat öbeği",
+  "adv_phrase": "zarf öbeği"
+ }
+}
