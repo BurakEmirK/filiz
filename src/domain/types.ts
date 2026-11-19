@@ -21,7 +21,7 @@ export interface SyncFields {
   deleted?: boolean
 }
 
-export type ThemeId = 'kum' | 'adacayi' | 'sis' | 'oyun'
+export type ThemeId = 'civit' | 'kum' | 'adacayi' | 'sis' | 'oyun'
 export type AgeGroup = 'child' | 'teen' | 'adult'
 
 export interface KnownLanguage {
@@ -45,6 +45,8 @@ export interface Profile extends SyncFields {
   newPerDay: number
   desiredRetention: number
   theme: ThemeId
+  /** Tema geçişi yapıldı mı (2 = eski varsayılan "Kum" bir kez "Çivit"e geçirildi) */
+  themeVersion?: number
   appearance: 'system' | 'light' | 'dark'
   textScale: number
   reduceMotion: 'system' | 'on' | 'off'
@@ -91,6 +93,8 @@ export interface LessonState extends SyncFields {
   industryId?: string
   status: 'in-progress' | 'completed' | 'skipped-known'
   step: number
+  /** Adım dizisi sürümü: 2 = kısa ders (tanıt + tanıma). Alan yoksa eski uzun dizi (yarım dersler eski sırayla sürer). */
+  seq?: number
   completedAt?: number
 }
 
@@ -238,4 +242,48 @@ export interface WordOfDay extends SyncFields {
   date: string
   senseId: string
   relatedSenseIds: string[]
+}
+
+/** Kaydedilebilir alıştırma adımı tanımı: kimlikler ve seçenekler saklanır, yeniden açılınca aynı adım kurulur. */
+export type StepDesc =
+  | { kind: 'intro'; senseId: string; tag?: 'wod' }
+  | { kind: 'choose' | 'choose-gloss'; senseId: string; optionIds: string[]; mode: 'audio' | 'text'; skill: Skill }
+  | { kind: 'flash'; senseId: string }
+  | { kind: 'type'; senseId: string; mode: 'word' | 'cloze'; exampleIndex?: number }
+  | { kind: 'produce'; senseId: string }
+  | { kind: 'letter'; senseId: string }
+  | { kind: 'task'; senseId: string; taskId: string }
+
+/** Günlük (veya ek) çalışma oturumu: kısa, kaldığı yerden sürdürülebilir. */
+export interface StudySession extends SyncFields {
+  id: string
+  lang: string
+  /** Oluşturulduğu yerel gün (yyyy-mm-dd) */
+  date: string
+  /** 'daily' = günlük hedef içinde; 'extra' = kullanıcının açıkça seçtiği ek çalışma */
+  kind: 'daily' | 'extra'
+  steps: StepDesc[]
+  /** Sıradaki adımın sırası */
+  index: number
+  status: 'in-progress' | 'completed'
+  newSenseIds: string[]
+  reviewCount: number
+  retries: number
+  scored: number
+  correct: number
+  createdAt: number
+  completedAt?: number
+}
+
+/** Kullanıcının şüpheli bulduğu içerik. Yalnızca bu cihazda saklanır, hiçbir yere gönderilmez. */
+export interface ContentReport extends SyncFields {
+  id: string
+  lang: string
+  senseId?: string
+  word: string
+  issue: 'meaning' | 'translation' | 'example' | 'audio' | 'other'
+  note: string
+  /** Bildirimin yapıldığı yer (ör. "kelime kartı", "örnek cümle") */
+  context: string
+  createdAt: number
 }

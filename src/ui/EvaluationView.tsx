@@ -8,21 +8,15 @@ const AXES: { key: keyof Evaluation['axes']; label: string }[] = [
   { key: 'naturalness', label: 'Doğallık ve bağlama uygunluk' },
 ]
 
-/** Dört ekseni ayrı gösterir. Yapılmamış bir değerlendirmeyi asla "doğru" diye göstermez. */
+/** Dört ekseni ayrı gösterir (varsayılan akışı sade tutmak için açılır bölümde).
+ *  Yapılmamış bir değerlendirmeyi asla "doğru" diye göstermez. */
 export function EvaluationView({ attempt }: { attempt: Attempt }) {
   const e = attempt.evaluation
   if (!e) return null
-  const pending = attempt.evalStatus === 'pending'
   return (
     <div className="stack" aria-live="polite">
-      {pending ? (
-        <div className="notice">
-          <span>
-            <b>Değerlendirme bekliyor.</b> Cevabın kaydedildi. Dilbilgisi ve doğallık kontrolü için çevrimiçi değerlendirme gerekiyor; bu
-            henüz bağlı değil (sonraki aşama). O yüzden şimdilik "doğru" ya da "yanlış" demiyorum.
-          </span>
-        </div>
-      ) : null}
+      <details className="why">
+        <summary>Ayrıntılı kontrol</summary>
       <div className="axes">
         {AXES.map(({ key, label }) => {
           const a = e.axes[key]
@@ -35,6 +29,7 @@ export function EvaluationView({ attempt }: { attempt: Attempt }) {
           )
         })}
       </div>
+      </details>
       {e.clarificationQuestion ? (
         <div className="notice warn">
           <span>

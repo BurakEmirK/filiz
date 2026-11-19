@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest'
 import { genKey, LESSON_SIZE, type Fetcher, type GenIndex, type GenWord } from '../src/content/generated'
 import { ContentRegistry } from '../src/content/registry'
 import { computeCareer } from '../src/domain/career'
-import { acceptedForWord, findCloze, lessonSteps, unitCheckSteps } from '../src/screens/steps'
+import { acceptedForWord, findCloze, lessonSteps, relatedForWord, unitCheckSteps } from '../src/screens/steps'
 import { freshRepo } from './helpers'
 
 const LANGS = ['ru', 'hu', 'fr', 'es', 'en', 'tr']
@@ -128,14 +128,16 @@ describe('Uygulamaya yükleme', () => {
     expect(unitCheckSteps(units, 'x')).toHaveLength(10)
   })
 
-  it('aynı Türkçe anlamlı başka kelime yazılırsa yanlış sayılmaz', async () => {
+  it('aynı Türkçe anlamlı başka kelime birbirinin yerine geçmiş sayılmaz; ayrıca "benzer" diye açıklanır', async () => {
     const { content } = await import('../src/content/registry')
     await content.ensureLanguage('ru', fsFetcher)
     const sense = [...content.senses.values()].find((s) => s.generated && s.lang === 'ru' && content.sameGloss(s).length > 0)!
     expect(sense).toBeDefined()
     const acc = acceptedForWord(sense)
+    const other = content.lemma(content.sameGloss(sense)[0])
     expect(acc).toContain(content.lemma(sense))
-    expect(acc).toContain(content.lemma(content.sameGloss(sense)[0]))
+    expect(acc).not.toContain(other)
+    expect(relatedForWord(sense)).toContain(other)
   })
 })
 

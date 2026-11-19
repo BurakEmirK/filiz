@@ -2,6 +2,7 @@ import type { Sense } from '../content/types'
 import { newCard, reviewCard } from '../domain/scheduler'
 import type {
   Attempt,
+  ContentReport,
   ErrorNote,
   Grade,
   IndustryTrack,
@@ -13,6 +14,7 @@ import type {
   Skill,
   SkillMemory,
   StoredCard,
+  StudySession,
   WordOfDay,
 } from '../domain/types'
 import { FilizDB, SCHEMA_VERSION, TABLES, type TableName } from './db'
@@ -40,7 +42,8 @@ export function defaultProfile(deviceId: string, now = Date.now()): Profile {
     dailyMinutes: 15,
     newPerDay: 5,
     desiredRetention: 0.9,
-    theme: 'kum',
+    theme: 'civit',
+    themeVersion: 2,
     appearance: 'system',
     textScale: 1,
     reduceMotion: 'system',
@@ -49,6 +52,13 @@ export function defaultProfile(deviceId: string, now = Date.now()): Profile {
     updatedAt: now,
     deviceId,
   }
+}
+
+/** Profil geçişleri: eski varsayılan tema "Kum" bir kez yeni varsayılan "Çivit"e geçer.
+ *  Kullanıcı sonradan Kum'u seçerse (themeVersion artık 2) tercihi korunur. */
+export function migrateProfile(p: Profile): Profile {
+  if ((p.themeVersion ?? 1) >= 2) return p
+  return { ...p, theme: p.theme === 'kum' ? 'civit' : p.theme, themeVersion: 2 }
 }
 
 export interface ReviewInput {
@@ -251,6 +261,39 @@ export class Repository {
     const rec = this.stamp({ ...w, id: `${w.lang}|${w.date}` }) as WordOfDay
     await this.db.wordOfDay.put(rec)
     return rec
+  }
+
+  // ---- Çalışma oturumları ----
+  async saveSession(s: Omit<StudySession, 'updatedAt' | 'deviceId'>): Promise<StudySession> {
+    const rec = this.stamp(s) as StudySession
+    await this.db.sessions.put(rec)
+    return rec
+  }
+  getSession(id: string) {
+    return this.db.sessions.get(id)
+  }
+  /** Bu dilde yarım kalmış en son oturum (tarihi ne olursa olsun: yarım iş önce gelir) */
+  async activeSession(lang: string): Promise<StudySession | undefined> {
+    const all = await this.db.sessions.where('lang').equals(lang).toArray()
+    return all.filter((s) => s.status === 'in-progress' && !s.deleted).sort((a, b) => b.createdAt - a.createdAt)[0]
+  }
+  async sessionsOn(lang: string, date: string): Promise<StudySession[]> {
+    const all = await this.db.sessions.where('lang').equals(lang).toArray()
+    return all.filter((s) => s.date === date && !s.deleted).sort((a, b) => a.createdAt - b.createdAt)
+  }
+
+  // ---- İçerik bildirimleri (yalnızca bu cihazda) ----
+  async addReport(r: Omit<ContentReport, 'id' | 'createdAt' | 'updatedAt' | 'deviceId'>) {
+    const rec = this.stamp({ ...r, id: uid(), createdAt: Date.now() }) as ContentReport
+    await this.db.reports.put(rec)
+    return rec
+  }
+  async reports(): Promise<ContentReport[]> {
+    const all = await this.db.reports.toArray()
+    return all.filter((r) => !r.deleted).sort((a, b) => b.createdAt - a.createdAt)
+  }
+  async deleteReport(id: string) {
+    await this.db.reports.update(id, { deleted: true, updatedAt: Date.now(), deviceId: this.deviceId })
   }
 
   // ---- Yedekleme / geri yükleme ----

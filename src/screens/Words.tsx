@@ -6,18 +6,19 @@ import { content } from '../content/registry'
 import type { Sense } from '../content/types'
 import { charDiff } from '../domain/text'
 import { SKILL_LABEL, type PersonalPhrase, type Skill, type SkillMemory } from '../domain/types'
-import { Card, Dialog, LangSwitcher, Seg, SenseDetail } from '../ui/components'
+import { BackLink, Card, Dialog, LangSwitcher, Seg, SenseDetail } from '../ui/components'
 import { Icon } from '../ui/icons'
 
 type Tab = 'collection' | 'errors' | 'all'
 
-export function WordsScreen({ tab }: { tab: Tab }) {
+export function WordsScreen({ tab, initialQuery = '' }: { tab: Tab; initialQuery?: string }) {
   const { profile, updateProfile } = useApp()
   const lang = profile.activeLang
   return (
     <div className="page">
       <div className="page-head">
         <div>
+          <BackLink href="#/explore" label="Keşfet" />
           <h1>Kelimeler</h1>
           <p>Koleksiyonun, hata defterin ve öğrendiğin anlamlar.</p>
         </div>
@@ -33,7 +34,7 @@ export function WordsScreen({ tab }: { tab: Tab }) {
           { value: 'all', label: 'Tüm kelimeler' },
         ]}
       />
-      {tab === 'collection' ? <Collection lang={lang} /> : tab === 'errors' ? <Errors lang={lang} /> : <AllWords lang={lang} />}
+      {tab === 'collection' ? <Collection lang={lang} /> : tab === 'errors' ? <Errors lang={lang} /> : <AllWords lang={lang} initialQuery={initialQuery} key={initialQuery} />}
     </div>
   )
 }
@@ -173,12 +174,12 @@ function SkillDots({ senseId, skills }: { senseId: string; skills: SkillMemory[]
 
 const PAGE = 60
 
-function AllWords({ lang }: { lang: string }) {
+function AllWords({ lang, initialQuery = '' }: { lang: string; initialQuery?: string }) {
   const loaded = useLangContent(lang)
   const { repo, profile, dataVersion, bump } = useApp()
   const { data: skills } = useAsync(() => repo.skillsForLang(lang), [lang, dataVersion])
   const [detail, setDetail] = useState<Sense | null>(null)
-  const [q, setQ] = useState('')
+  const [q, setQ] = useState(initialQuery)
   const [group, setGroup] = useState<'all' | 'learning' | 'textile'>('all')
   const [limit, setLimit] = useState(PAGE)
   const started = useMemo(() => new Set((skills ?? []).map((s) => s.senseId)), [skills])

@@ -6,7 +6,7 @@ import type { Lesson, Sense } from '../content/types'
 import { formatDue } from '../domain/planner'
 import { getTodayPlan, personalSenseMap } from '../domain/services'
 import { Player, type PlayerCtx } from './Player'
-import { errorPracticeSteps, lessonSteps, reviewSteps, skipCheckSteps, unitCheckSteps, wordOfDaySteps } from './steps'
+import { errorPracticeSteps, LESSON_SEQ, lessonStepsFor, reviewSteps, skipCheckSteps, unitCheckSteps, wordOfDaySteps } from './steps'
 
 // Tam ekran öğrenme etkinlikleri. Her biri adım adım kaydeder; kapatılırsa kaldığı yer korunur.
 
@@ -31,21 +31,21 @@ function lessonLang(lessonId: string): string | undefined {
   return m?.[1] ?? content.lessons.get(lessonId)?.lang
 }
 
-function backRoute(lesson: Lesson) {
-  return lesson.track === 'industry' ? `#/industries/${lesson.industry}?lang=${lesson.lang}` : '#/learn'
+function backRoute(lesson: Lesson, from?: string | null) {
+  if (from === 'today') return '#/today'
+  return lesson.track === 'industry' ? `#/industries/${lesson.industry}?lang=${lesson.lang}` : lesson.track === 'sounds' ? '#/sounds' : '#/learn'
 }
 
-export function LessonScreen({ lessonId }: { lessonId: string }) {
+export function LessonScreen({ lessonId, from }: { lessonId: string; from?: string | null }) {
   const lang = lessonLang(lessonId)
   const loaded = useLangContent(lang)
   if (!loaded.ready) return <Loading text="Kelimeler yükleniyor…" />
-  return <LessonInner lessonId={lessonId} key={lessonId} />
+  return <LessonInner lessonId={lessonId} from={from} key={lessonId} />
 }
 
-function LessonInner({ lessonId }: { lessonId: string }) {
+function LessonInner({ lessonId, from }: { lessonId: string; from?: string | null }) {
   const { repo, bump } = useApp()
   const lesson = content.lessons.get(lessonId)
-  const steps = useMemo(() => (lesson ? lessonSteps(lesson) : []), [lesson])
   const ctx = useCtx(lesson?.lang ?? 'ru', lesson?.track === 'industry' ? { context: 'industry', industryId: lesson.industry } : {})
   const state = useAsync(async () => {
     if (!lesson) return null
@@ -53,24 +53,29 @@ function LessonInner({ lessonId }: { lessonId: string }) {
     await repo.ensureTrack(lesson.lang)
     return (await repo.getLessonState(lesson.lang, lesson.id)) ?? null
   }, [lessonId])
+  // Eski (uzun) düzende yarım kalmış ders eski sırayla, kaldığı adımdan sürer; diğerleri kısa düzen
+  const plan = useMemo(() => (lesson && !state.loading ? lessonStepsFor(lesson, state.data ?? undefined) : null), [lesson, state.loading, state.data])
   useEffect(() => rememberLearningRoute(`#/lesson/${lessonId}`), [lessonId])
   if (!lesson) return <p className="page">Ders bulunamadı.</p>
-  if (state.loading) return <Loading />
-  const startAt = state.data?.status === 'in-progress' ? state.data.step : 0
+  if (state.loading || !plan) return <Loading />
   const save = (step: number, status: 'in-progress' | 'completed') =>
-    repo.saveLessonState({ lang: lesson.lang, lessonId: lesson.id, track: lesson.track, industryId: lesson.industry, status, step, completedAt: status === 'completed' ? Date.now() : undefined })
+    repo.saveLessonState({
+      lang: lesson.lang, lessonId: lesson.id, track: lesson.track, industryId: lesson.industry, status, step,
+      seq: plan.legacy && status === 'in-progress' ? undefined : LESSON_SEQ, completedAt: status === 'completed' ? Date.now() : undefined,
+    })
   return (
     <Player
       title={lesson.title}
-      steps={steps}
+      steps={plan.steps}
       ctx={ctx}
-      startAt={startAt}
+      startAt={plan.startAt}
       showNextDue={lesson.track !== 'sounds'}
-      onStep={(next) => void save(next, next >= steps.length ? 'completed' : 'in-progress')}
+      notice={plan.legacy ? 'Bu ders eski (uzun) düzende yarım kalmıştı; kaldığın yerden aynı sırayla devam ediyor. Sonraki dersler kısa düzende.' : undefined}
+      onStep={(next, steps) => void save(next, next >= steps.length ? 'completed' : 'in-progress')}
       onFinish={() => rememberLearningRoute(null)}
       onClose={() => {
         bump()
-        go(backRoute(lesson))
+        go(backRoute(lesson, from))
       }}
     />
   )
@@ -91,7 +96,7 @@ export function ReviewScreen() {
   if (data.loading || !data.data) return <Loading />
   const close = () => {
     bump()
-    go('#/today')
+    go('#/explore')
   }
   if (data.data.steps.length === 0) {
     return (
@@ -128,7 +133,7 @@ export function WordOfDayScreen() {
   if (data.loading) return <Loading />
   const close = () => {
     bump()
-    go('#/today')
+    go('#/explore')
   }
   if (!data.data) return <p className="page">Bu dil için içerik yok.</p>
   return <Player title="Günün Kelimesi" steps={data.data} ctx={ctx} onClose={close} />
@@ -176,7 +181,7 @@ function SkipCheckInner({ lessonId }: { lessonId: string }) {
   const { repo, bump } = useApp()
   const lesson = content.lessons.get(lessonId)
   const steps = useMemo(() => (lesson ? skipCheckSteps(lesson) : []), [lesson])
-  const ctx = useCtx(lesson?.lang ?? 'ru', { context: lesson?.track === 'industry' ? 'industry' : 'core', industryId: lesson?.industry, recordOnlyCorrect: true })
+  const ctx = useCtx(lesson?.lang ?? 'ru', { context: lesson?.track === 'industry' ? 'industry' : 'core', industryId: lesson?.industry, recordOnlyCorrect: true, source: 'placement' })
   if (!lesson) return <p className="page">Ders bulunamadı.</p>
   return (
     <Player
@@ -215,7 +220,7 @@ function SkipUnitInner({ lang, unit }: { lang: string; unit: number }) {
   const { repo, bump } = useApp()
   const lessons = content.coreLessons(lang).filter((l) => l.unit === unit)
   const steps = useMemo(() => unitCheckSteps(lessons, `unit-${lang}-${unit}`), [lessons, lang, unit])
-  const ctx = useCtx(lang, { recordOnlyCorrect: true })
+  const ctx = useCtx(lang, { recordOnlyCorrect: true, source: 'placement' })
   if (!lessons.length) return <p className="page">Birim bulunamadı.</p>
   const passed = (results: { scored: boolean; correct?: boolean }[]) => results.filter((r) => r.scored && r.correct).length >= Math.min(9, results.length)
   return (

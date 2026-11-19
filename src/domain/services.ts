@@ -8,6 +8,7 @@ import {
   mergeEvaluations,
   type ClosedCheck,
   type Evaluator,
+  type EvaluatorState,
 } from './evaluation'
 import { computeNewBudget, todayKey, type Budget } from './planner'
 import { gradeFromOutcome } from './scheduler'
@@ -43,6 +44,8 @@ export interface ClosedSubmit {
   prompt: string
   answer: PreparedAnswer
   accepted: string[]
+  /** Aynı Türkçe anlamlı başka kelimeler: doğru sayılmaz, ayrıca açıklanır */
+  related?: string[]
   hintsUsed: number
   elapsedMs?: number
   context: Attempt['context']
@@ -53,7 +56,7 @@ export interface ClosedSubmit {
 }
 
 export async function submitClosed(repo: Repository, s: ClosedSubmit): Promise<{ check: ClosedCheck; memory: SkillMemory; attempt: Attempt }> {
-  const check = checkClosedAnswer(s.answer.finalText, s.accepted, s.lang)
+  const check = checkClosedAnswer(s.answer.finalText, s.accepted, s.lang, s.related)
   const attempt = await repo.addAttempt({
     lang: s.lang, senseIds: [s.sense.id], exerciseType: s.exerciseType, skill: s.skill, context: s.context, industryId: s.industryId,
     taskMode: 'closed', prompt: s.prompt, inputMode: s.answer.inputMode, recognizedText: s.answer.recognizedText,
@@ -76,7 +79,7 @@ export async function submitClosed(repo: Repository, s: ClosedSubmit): Promise<{
 
 export async function submitChoice(
   repo: Repository,
-  s: { lang: string; sense: Sense; skill: Skill; exerciseType: ExerciseType; prompt: string; correct: boolean; elapsedMs?: number; context: Attempt['context']; industryId?: string; source: 'lesson' | 'review'; desiredRetention?: number },
+  s: { lang: string; sense: Sense; skill: Skill; exerciseType: ExerciseType; prompt: string; correct: boolean; elapsedMs?: number; context: Attempt['context']; industryId?: string; source: 'lesson' | 'review' | 'placement'; desiredRetention?: number },
 ) {
   const attempt = await repo.addAttempt({
     lang: s.lang, senseIds: [s.sense.id], exerciseType: s.exerciseType, skill: s.skill, context: s.context, industryId: s.industryId,
@@ -117,6 +120,8 @@ export interface ProductionSubmit {
   elapsedMs?: number
   context: Attempt['context']
   industryId?: string
+  /** Çevrimiçi değerlendiricinin durumu: yapılandırılmamışsa cümle pratik olarak kaydedilir, kuyruğa girmez */
+  evaluator: EvaluatorState
 }
 
 /** Cevabı kaydeder ve cihazda yapılabilen kontrolleri uygular. Bilinmeyen eksenler "bekliyor" kalır;
@@ -128,7 +133,7 @@ export async function submitProduction(repo: Repository, s: ProductionSubmit): P
     skill: 'produce', context: s.context, industryId: s.industryId, taskMode: s.mode, prompt: s.prompt,
     inputMode: s.answer.inputMode, recognizedText: s.answer.recognizedText, finalText: s.answer.finalText,
     recognitionEdited: s.answer.recognitionEdited, hintsUsed: s.hintsUsed, elapsedMs: s.elapsedMs, correct: null,
-    evalStatus: hasPendingAxes(evaluation) ? 'pending' : 'local', evaluation,
+    evalStatus: s.evaluator !== 'unconfigured' && hasPendingAxes(evaluation) ? 'pending' : 'local', evaluation,
   })
 }
 
@@ -159,6 +164,30 @@ export async function processPending(repo: Repository, evaluator: Evaluator, reg
     }
   }
   return done
+}
+
+// ---- Günlük yeni kelime bütçesi ----
+
+export function startOfLocalDay(now: Date): number {
+  return new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()
+}
+
+/** Bugün (yerel gün) İLK kez tanıştırılan benzersiz anlamlar. Bir anlam bir kez sayılır.
+ *  Harf/ses öğeleri, kişisel ifadeler ve "biliyorum" kontrolünde tanınanlar yeni kelime sayılmaz. */
+export async function introducedToday(repo: Repository, lang: string, now = new Date()): Promise<Set<string>> {
+  const start = startOfLocalDay(now)
+  const first = new Map<string, { at: number; source: string }>()
+  for (const r of await repo.reviewsForLang(lang)) {
+    const cur = first.get(r.senseId)
+    if (!cur || r.at < cur.at) first.set(r.senseId, { at: r.at, source: r.source })
+  }
+  const out = new Set<string>()
+  for (const [id, f] of first) {
+    if (f.at < start || f.at > now.getTime()) continue
+    if (id.startsWith('snd:') || id.startsWith('user:') || f.source === 'placement' || f.source === 'collection') continue
+    out.add(id)
+  }
+  return out
 }
 
 // ---- Günlük plan ve Günün Kelimesi ----

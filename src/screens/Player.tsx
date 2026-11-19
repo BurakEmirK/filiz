@@ -3,18 +3,18 @@ import { content } from '../content/registry'
 import { soundItem } from '../content/sounds'
 import type { Sense, TaskSpec } from '../content/types'
 import type { Repository } from '../data/repo'
-import type { ClosedCheck } from '../domain/evaluation'
+import { evaluatorState, type ClosedCheck, type EvaluatorState } from '../domain/evaluation'
 import { formatDue } from '../domain/planner'
 import { GRADE_LABEL } from '../domain/scheduler'
 import { submitChoice, submitClosed, submitProduction, submitSelfRating, type PreparedAnswer } from '../domain/services'
 import type { Attempt, Grade, Profile, Skill } from '../domain/types'
 import { AnswerInput } from '../ui/AnswerInput'
-import { play, preloadRecording } from '../ui/audio'
-import { AudioButton, ExampleBox, GlossLine, Progress, SenseImage, WordHeader } from '../ui/components'
+import { play, preloadRecording, type PlayOutcome } from '../ui/audio'
+import { AudioButton, essentialGrammar, ExampleBox, GlossLine, Headword, Progress, ReportButton, SenseImage, WordDetails } from '../ui/components'
 import { EvaluationView } from '../ui/EvaluationView'
 import { Icon } from '../ui/icons'
 import { TraceCanvas } from '../ui/TraceCanvas'
-import { acceptedForWord, findCloze, stepSenseIds, type Step } from './steps'
+import { acceptedForWord, findCloze, relatedForWord, stepSenseIds, type Step } from './steps'
 
 export interface PlayerCtx {
   repo: Repository
@@ -22,7 +22,7 @@ export interface PlayerCtx {
   lang: string
   context: Attempt['context']
   industryId?: string
-  source: 'lesson' | 'review' | 'error-practice' | 'collection'
+  source: 'lesson' | 'review' | 'error-practice' | 'collection' | 'placement'
   /** Seviye kontrolü / "biliyorum" kontrolünde yalnızca tanınan kelimeler tekrar planına alınır */
   recordOnlyCorrect?: boolean
 }
@@ -39,89 +39,126 @@ interface StepProps<S extends Step> {
   onDone: (r: StepResult) => void
 }
 
+const choiceSource = (ctx: PlayerCtx) => (ctx.source === 'review' ? 'review' : ctx.source === 'placement' ? 'placement' : 'lesson')
+
+/** Adımın birincil eylemi: ekranın altında sabit durur, klavyeyle de erişilir. */
 function Continue({ onClick, label = 'Devam' }: { onClick: () => void; label?: string }) {
   const ref = useRef<HTMLButtonElement>(null)
   useEffect(() => ref.current?.focus({ preventScroll: true }), [])
   return (
-    <button ref={ref} className="btn btn-primary btn-block" onClick={onClick}>
-      {label}
-    </button>
+    <div className="action-bar">
+      <button ref={ref} className="btn btn-primary btn-block" onClick={onClick}>
+        {label}
+      </button>
+    </div>
   )
+}
+
+/** Kısa yönerge (her alıştırmanın ilk satırı) */
+function Instruction({ children }: { children: ReactNode }) {
+  return <p className="instruction">{children}</p>
+}
+
+/** Kısa geri bildirim; ek açıklama isteyene açılır. */
+function Feedback({ tone, title, children, more }: { tone: 'good' | 'bad' | 'warn'; title: string; children?: ReactNode; more?: ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null)
+  // Geri bildirim görünür alana kaydırılır (alttaki sabit "Devam" düğmesinin arkasında kalmasın)
+  useEffect(() => {
+    const reduce = document.documentElement.dataset.motion === 'reduce'
+    ref.current?.scrollIntoView?.({ block: 'nearest', behavior: reduce ? 'auto' : 'smooth' })
+  }, [])
+  return (
+    <div ref={ref} className={`feedback ${tone}`} role="status" aria-live="polite">
+      <p className="feedback-title">{title}</p>
+      {children}
+      {more ? (
+        <details className="why">
+          <summary>Neden?</summary>
+          <div className="small">{more}</div>
+        </details>
+      ) : null}
+    </div>
+  )
+}
+
+/** Tanıtımda gösterilecek tek, kısa örnek */
+function shortExample(s: Sense) {
+  return [...s.examples].sort((a, b) => a.text.length - b.text.length)[0]
 }
 
 function IntroStep({ step, ctx, onDone }: StepProps<Extract<Step, { kind: 'intro' }>>) {
   const s = step.sense
-  const ex = s.examples[0]
+  const ex = shortExample(s)
+  const grammar = essentialGrammar(s)
+  const visual = content.visual(s)
   return (
     <>
-      <p className="muted small">Yeni kelime{s.rank ? ` · sıklık sırası #${s.rank}` : ''}</p>
-      <div className="sense-hero">
-        <SenseImage sense={s} />
-        <WordHeader sense={s} profile={ctx.profile} />
+      <p className="step-label">{step.tag === 'wod' ? 'Günün kelimesi' : 'Yeni kelime'}</p>
+      <div className={`word-card${visual ? ' has-visual' : ''}`}>
+        {visual ? <SenseImage sense={s} /> : null}
+        <div className="stack" style={{ gap: 8 }}>
+          <Headword sense={s} profile={ctx.profile} />
+          <GlossLine sense={s} profile={ctx.profile} />
+          {grammar ? <p className="small muted">{grammar}</p> : null}
+        </div>
       </div>
-      {!s.generated && s.explanation ? <p>{s.explanation}</p> : null}
       {ex ? <ExampleBox text={ex.text} tr={ex.tr} lang={s.lang} trSource={ex.trSource} /> : null}
-      {s.usageNote ? <div className="notice">{s.usageNote}</div> : null}
-      {content.otherSenses(s).length && s.senseIndex === 1 ? (
-        <p className="tiny muted">Bu kelimenin başka anlamları da var; şimdi en yaygın anlamı öğreniyorsun.</p>
-      ) : null}
+      <WordDetails sense={s} profile={ctx.profile} report={ctx.context !== 'demo'} />
       <Continue onClick={() => onDone({ scored: false, senseIds: [s.id] })} />
     </>
   )
 }
 
-/** Dinleme modunda: büyük dinle düğmesi (kendiliğinden çalmaz). Ses çalmazsa okuyarak devam edilebilir. */
+/** Dinleme modu: büyük dinle düğmesi (kendiliğinden çalmaz). Ses çalmazsa açıkça söylenir ve okuyarak devam edilir. */
 function useListenMode(sense: Sense, mode: 'audio' | 'text') {
-  const [audioOk, setAudioOk] = useState(true)
+  const [outcome, setOutcome] = useState<PlayOutcome | 'playing' | null>(null)
   const [readInstead, setReadInstead] = useState(false)
   useEffect(() => {
     void preloadRecording(sense.audio?.url)
   }, [sense.audio?.url])
   const listening = mode === 'audio' && !readInstead
   const listen = () => {
-    play({ text: content.lemma(sense), lang: sense.lang, recording: sense.audio?.url }).then((o) => setAudioOk(o !== 'failed'))
+    setOutcome('playing')
+    play({ text: content.lemma(sense), lang: sense.lang, recording: sense.audio?.url }).then(setOutcome)
   }
   const skill: Skill = listening ? 'recognizeAudio' : 'recognizeText'
+  const failed = outcome === 'failed' || outcome === 'tts-no-voice'
+  const status =
+    outcome === 'playing' ? 'Çalıyor…'
+    : outcome === 'recording' ? 'Yeniden dinlemek için dokun.'
+    : outcome === 'tts' ? 'Cihaz sesi çaldı. Duymadıysan sessiz modu kapat.'
+    : `Dinlemek için dokun (${sense.audio ? 'insan sesi' : 'cihaz sesi'}).`
   const header = listening ? (
-    <>
+    <div className="listen">
       <button className="big-audio" onClick={listen} aria-label={`Kelimeyi dinle (${sense.audio ? 'insan sesi kaydı' : 'cihaz sesi'})`}>
         <Icon.play />
       </button>
-      <p className="tiny muted" style={{ textAlign: 'center' }}>
-        {sense.audio ? 'İnsan sesi kaydı' : 'Cihaz sesi (sentetik)'} · Dinlemek için dokun
-        {sense.audio ? null : (
-          <>
-            <br />
-            Duymuyorsan sessiz modu kapatmayı dene.
-          </>
-        )}
-      </p>
-      {!audioOk ? (
-        <div className="notice warn">
-          <span>
-            Ses çalınamadı.{' '}
-            <button className="btn btn-ghost" onClick={() => setReadInstead(true)}>
-              Okuyarak devam et
-            </button>
-          </span>
+      {failed ? (
+        <div className="feedback warn" role="status">
+          <p className="feedback-title">Ses çalınamadı.</p>
+          <p className="small">Bu soruyu kelimeyi okuyarak cevaplayabilirsin.</p>
+          <button className="btn btn-soft" onClick={() => setReadInstead(true)}>
+            Okuyarak devam et
+          </button>
         </div>
       ) : (
-        <button className="btn btn-ghost" style={{ justifySelf: 'center' }} onClick={() => setReadInstead(true)}>
-          Ses çalmıyor mu? Okuyarak devam et
-        </button>
+        <>
+          <p className="tiny muted" role="status">{status}</p>
+          <button className="btn btn-ghost btn-small" onClick={() => setReadInstead(true)}>
+            Ses yok mu? Okuyarak devam et
+          </button>
+        </>
       )}
-    </>
+    </div>
   ) : (
-    <div className="word" lang={sense.lang} style={{ textAlign: 'center' }}>
+    <div className="prompt-word" lang={sense.lang}>
       {content.lexemes.get(sense.lexemeId)?.pronunciation?.stressed ?? content.lemma(sense)}
     </div>
   )
   return { listening, skill, header }
 }
 
-function ChooseStep({ step, ctx, onDone }: StepProps<Extract<Step, { kind: 'choose' }>>) {
-  const s = step.sense
-  const { listening, skill, header } = useListenMode(s, step.mode)
+function useChoice(s: Sense, ctx: PlayerCtx, skill: Skill, exerciseType: 'listen-choose' | 'choose-image') {
   const [picked, setPicked] = useState<string | null>(null)
   const t0 = useRef(Date.now())
   const pick = async (o: Sense) => {
@@ -129,15 +166,32 @@ function ChooseStep({ step, ctx, onDone }: StepProps<Extract<Step, { kind: 'choo
     setPicked(o.id)
     if (ctx.recordOnlyCorrect && o.id !== s.id) return
     await submitChoice(ctx.repo, {
-      lang: s.lang, sense: s, skill, exerciseType: listening ? 'listen-choose' : 'choose-image', prompt: content.lemma(s), correct: o.id === s.id,
-      elapsedMs: Date.now() - t0.current, context: ctx.context, industryId: ctx.industryId, source: ctx.source === 'review' ? 'review' : 'lesson',
+      lang: s.lang, sense: s, skill, exerciseType, prompt: content.lemma(s), correct: o.id === s.id,
+      elapsedMs: Date.now() - t0.current, context: ctx.context, industryId: ctx.industryId, source: choiceSource(ctx),
       desiredRetention: ctx.profile.desiredRetention,
     })
   }
-  const correct = picked === s.id
+  return { picked, pick, correct: picked === s.id }
+}
+
+function ChoiceFeedback({ s, ctx, correct }: { s: Sense; ctx: PlayerCtx; correct: boolean }) {
+  return (
+    <Feedback tone={correct ? 'good' : 'bad'} title={correct ? 'Doğru.' : 'Doğrusu:'}>
+      <p>
+        <b lang={s.lang} className="t-serif">{content.lemma(s)}</b>: {content.gloss(s, ctx.profile.explanationLang)}
+      </p>
+      {!correct && ctx.context !== 'demo' ? <ReportButton lang={s.lang} senseId={s.id} word={content.lemma(s)} context="alıştırma" /> : null}
+    </Feedback>
+  )
+}
+
+function ChooseStep({ step, ctx, onDone }: StepProps<Extract<Step, { kind: 'choose' }>>) {
+  const s = step.sense
+  const { listening, skill, header } = useListenMode(s, step.mode)
+  const { picked, pick, correct } = useChoice(s, ctx, skill, listening ? 'listen-choose' : 'choose-image')
   return (
     <>
-      <p className="muted small">{listening ? 'Dinle ve doğru görseli seç' : 'Kelimenin anlamına uyan görseli seç'}</p>
+      <Instruction>{listening ? 'Dinle ve doğru resmi seç.' : 'Bu kelimenin resmini seç.'}</Instruction>
       {header}
       <div className="choices four">
         {step.options.map((o) => {
@@ -152,12 +206,7 @@ function ChooseStep({ step, ctx, onDone }: StepProps<Extract<Step, { kind: 'choo
       </div>
       {picked ? (
         <>
-          <div className={`notice ${correct ? 'good' : 'bad'}`} aria-live="polite">
-            <span>
-              {correct ? 'Doğru! ' : 'Bu sefer olmadı. '}
-              <b lang={s.lang}>{content.lemma(s)}</b> = {content.gloss(s, ctx.profile.explanationLang)}
-            </span>
-          </div>
+          <ChoiceFeedback s={s} ctx={ctx} correct={correct} />
           <Continue onClick={() => onDone({ scored: true, correct, senseIds: [s.id] })} />
         </>
       ) : null}
@@ -170,22 +219,10 @@ function ChooseGlossStep({ step, ctx, onDone }: StepProps<Extract<Step, { kind: 
   const s = step.sense
   const isLetter = s.id.startsWith('snd:')
   const { listening, skill, header } = useListenMode(s, isLetter ? 'text' : step.mode)
-  const [picked, setPicked] = useState<string | null>(null)
-  const t0 = useRef(Date.now())
-  const pick = async (o: Sense) => {
-    if (picked) return
-    setPicked(o.id)
-    if (ctx.recordOnlyCorrect && o.id !== s.id) return
-    await submitChoice(ctx.repo, {
-      lang: s.lang, sense: s, skill, exerciseType: listening ? 'listen-choose' : 'choose-image', prompt: content.lemma(s), correct: o.id === s.id,
-      elapsedMs: Date.now() - t0.current, context: ctx.context, industryId: ctx.industryId, source: ctx.source === 'review' ? 'review' : 'lesson',
-      desiredRetention: ctx.profile.desiredRetention,
-    })
-  }
-  const correct = picked === s.id
+  const { picked, pick, correct } = useChoice(s, ctx, skill, listening ? 'listen-choose' : 'choose-image')
   return (
     <>
-      <p className="muted small">{isLetter ? 'Bu harf / kural nasıl okunur?' : listening ? 'Dinle ve doğru anlamı seç' : 'Bu kelimenin anlamı hangisi?'}</p>
+      <Instruction>{isLetter ? 'Bu harf nasıl okunur?' : listening ? 'Dinle ve anlamını seç.' : 'Anlamı hangisi?'}</Instruction>
       {isLetter ? <div className="big-letter" lang={s.lang}>{content.lemma(s)}</div> : header}
       <div className="gloss-choices">
         {step.options.map((o) => {
@@ -199,12 +236,7 @@ function ChooseGlossStep({ step, ctx, onDone }: StepProps<Extract<Step, { kind: 
       </div>
       {picked ? (
         <>
-          <div className={`notice ${correct ? 'good' : 'bad'}`} aria-live="polite">
-            <span>
-              {correct ? 'Doğru! ' : 'Bu sefer olmadı. '}
-              <b lang={s.lang}>{content.lemma(s)}</b> = {content.gloss(s, ctx.profile.explanationLang)}
-            </span>
-          </div>
+          <ChoiceFeedback s={s} ctx={ctx} correct={correct} />
           <Continue onClick={() => onDone({ scored: true, correct, senseIds: [s.id] })} />
         </>
       ) : null}
@@ -219,19 +251,19 @@ function LetterStep({ step, onDone }: StepProps<Extract<Step, { kind: 'letter' }
   const [trace, setTrace] = useState(false)
   return (
     <>
-      <p className="muted small">{info?.group.title ?? 'Sesler ve Harfler'}</p>
+      <p className="step-label">{info?.group.title ?? 'Sesler ve Harfler'}</p>
       <div className="big-letter" lang={s.lang}>{content.lemma(s)}</div>
-      <p style={{ fontSize: '1.2em', textAlign: 'center', fontWeight: 650 }}>{s.customGloss}</p>
-      {s.explanation ? <div className="notice">{s.explanation}</div> : null}
-      <div className="stack">
+      <p className="letter-sound">{s.customGloss}</p>
+      {s.explanation ? <p className="small">{s.explanation}</p> : null}
+      <div className="stack" style={{ gap: 8 }}>
         <span className="small muted">Örnek kelimeler</span>
         {s.examples.map((e) => {
           const known = content.wordSense(s.lang, e.text)
           return (
             <div className="row" key={e.id}>
               <AudioButton text={e.text} lang={s.lang} />
-              <span lang={s.lang} style={{ fontWeight: 650 }}>{e.text}</span>
-              {known ? <span className="muted small">— {content.gloss(known)}</span> : null}
+              <span lang={s.lang} className="t-serif" style={{ fontWeight: 650 }}>{e.text}</span>
+              {known ? <span className="muted small">{content.gloss(known)}</span> : null}
             </div>
           )
         })}
@@ -241,7 +273,7 @@ function LetterStep({ step, onDone }: StepProps<Extract<Step, { kind: 'letter' }
           <TraceCanvas guide={content.lemma(s).split(' ')[0]} lang={s.lang} />
         ) : (
           <button className="btn btn-soft" onClick={() => setTrace(true)}>
-            <Icon.pen /> Bu harfi yazmayı dene (Apple Pencil veya parmak)
+            <Icon.pen /> Bu harfi yazmayı dene
           </button>
         )
       ) : null}
@@ -254,7 +286,7 @@ function FlashStep({ step, ctx, onDone }: StepProps<Extract<Step, { kind: 'flash
   const s = step.sense
   const [shown, setShown] = useState(false)
   const t0 = useRef(Date.now())
-  const ex = s.examples[0]
+  const ex = shortExample(s)
   const rate = async (g: Grade) => {
     await submitSelfRating(ctx.repo, {
       lang: s.lang, sense: s, skill: 'recognizeText', grade: g, prompt: content.lemma(s), elapsedMs: Date.now() - t0.current,
@@ -264,23 +296,25 @@ function FlashStep({ step, ctx, onDone }: StepProps<Extract<Step, { kind: 'flash
   }
   return (
     <>
-      <p className="muted small">Anlamını hatırla — önce düşün, sonra çevir</p>
-      <WordHeader sense={s} profile={ctx.profile} showGloss={false} />
+      <Instruction>Anlamını hatırlıyor musun?</Instruction>
+      <Headword sense={s} profile={ctx.profile} />
       {ex ? <ExampleBox text={ex.text} lang={s.lang} /> : null}
       {!shown ? (
-        <button className="btn btn-soft btn-block" onClick={() => setShown(true)}>
-          Anlamı göster
-        </button>
+        <div className="action-bar">
+          <button className="btn btn-primary btn-block" onClick={() => setShown(true)}>
+            Anlamı göster
+          </button>
+        </div>
       ) : (
         <>
-          <div className="sense-hero">
+          <div className={`word-card${content.visual(s) ? ' has-visual' : ''}`}>
             <SenseImage sense={s} />
-            <div className="stack">
+            <div className="stack" style={{ gap: 4 }}>
               <GlossLine sense={s} profile={ctx.profile} />
-              {ex?.tr ? <p className="muted">{ex.tr}</p> : null}
+              {ex?.tr ? <p className="muted small">{ex.tr}</p> : null}
             </div>
           </div>
-          <p className="small muted">Ne kadar kolay hatırladın? (Tekrar zamanı buna göre belirlenir.)</p>
+          <p className="small muted">Ne kadar kolay hatırladın?</p>
           <div className="rating">
             {([1, 2, 3, 4] as Grade[]).map((g) => (
               <button key={g} className={`btn ${g === 1 ? 'btn-danger' : g === 3 ? 'btn-primary' : ''}`} onClick={() => rate(g)}>
@@ -304,8 +338,8 @@ function TypeStep({ step, ctx, onDone }: StepProps<Extract<Step, { kind: 'type' 
   const submit = async (a: PreparedAnswer) => {
     const r = await submitClosed(ctx.repo, {
       lang: s.lang, sense: s, skill: 'write', exerciseType: cloze ? 'cloze' : 'type-word', prompt: cloze ? `${cloze.before}___${cloze.after}` : content.gloss(s),
-      answer: a, accepted, hintsUsed: hints, elapsedMs: Date.now() - t0.current, context: ctx.context, industryId: ctx.industryId,
-      source: ctx.source, desiredRetention: ctx.profile.desiredRetention, exampleId: cloze ? s.examples[step.exampleIndex ?? 0]?.id : undefined,
+      answer: a, accepted, related: cloze ? [] : relatedForWord(s), hintsUsed: hints, elapsedMs: Date.now() - t0.current, context: ctx.context, industryId: ctx.industryId,
+      source: ctx.source === 'placement' ? 'lesson' : ctx.source, desiredRetention: ctx.profile.desiredRetention, exampleId: cloze ? s.examples[step.exampleIndex ?? 0]?.id : undefined,
     })
     setResult(r.check)
   }
@@ -314,39 +348,51 @@ function TypeStep({ step, ctx, onDone }: StepProps<Extract<Step, { kind: 'type' 
   const alt = result?.correct && result.matched && result.matched !== expected
   return (
     <>
-      <p className="muted small">{cloze ? 'Boşluğa uygun biçimi yaz' : 'Bu anlamın karşılığını yaz'}</p>
+      <Instruction>{cloze ? 'Boşluğu doldur.' : 'Bu anlamın karşılığını yaz.'}</Instruction>
       {cloze ? (
         <div className="example">
           <span className="t" lang={s.lang} style={{ fontSize: '1.2em' }}>
             {cloze.before}
-            <span style={{ borderBottom: '2px solid var(--accent)', padding: '0 24px' }} aria-label="boşluk" />
+            <span className="blank" aria-label="boşluk" />
             {cloze.after}
           </span>
           <span className="muted small">{cloze.tr}</span>
         </div>
       ) : (
-        <div className="sense-hero">
+        <div className={`word-card${content.visual(s) ? ' has-visual' : ''}`}>
           <SenseImage sense={s} />
           <GlossLine sense={s} profile={ctx.profile} />
         </div>
       )}
       {!result ? (
         <>
+          <AnswerInput lang={s.lang} onSubmit={submit} placeholder="Cevabın" />
           {hints > 0 ? (
-            <div className="notice">{hintText}</div>
+            <p className="small hint">{hintText}</p>
           ) : (
-            <button className="btn btn-ghost" onClick={() => setHints(1)}>
+            <button className="btn btn-ghost btn-small" onClick={() => setHints(1)}>
               <Icon.hint /> İpucu
             </button>
           )}
-          <AnswerInput lang={s.lang} onSubmit={submit} placeholder="Cevabını yaz" />
         </>
       ) : (
         <>
-          <div className={`notice ${result.correct ? 'good' : result.nearMiss ? 'warn' : 'bad'}`} aria-live="polite">
-            <div className="stack" style={{ gap: 6 }}>
-              <span>{result.correct ? (alt ? `Bu da doğru. Bu derste öğrettiğimiz kelime: ${expected}` : 'Doğru!') : result.explanation}</span>
-              {!result.correct && result.diff ? (
+          {result.correct ? (
+            <Feedback tone="good" title="Doğru.">{alt ? <p className="small">Öğrettiğimiz biçim: <span lang={s.lang}>{expected}</span></p> : null}</Feedback>
+          ) : result.related ? (
+            <Feedback tone="warn" title={`Burada istenen: ${expected}`} more={<p>{result.explanation}</p>} />
+          ) : (
+            <Feedback
+              tone={result.nearMiss ? 'warn' : 'bad'}
+              title={result.nearMiss ? 'Neredeyse.' : 'Doğrusu:'}
+              more={
+                <>
+                  <p>{result.explanation}</p>
+                  <p className="muted">Bu kelime hata defterine eklendi; ileride farklı bir örnekle yeniden karşına çıkacak.</p>
+                </>
+              }
+            >
+              {result.diff ? (
                 <span className="diff" aria-label="Senin yazdığınla doğrusu arasındaki fark">
                   {result.diff.map((d, i) => (
                     <span key={i} className={d.type}>
@@ -355,13 +401,12 @@ function TypeStep({ step, ctx, onDone }: StepProps<Extract<Step, { kind: 'type' 
                   ))}
                 </span>
               ) : null}
-            </div>
-          </div>
+            </Feedback>
+          )}
           <div className="row">
             <AudioButton text={expected} lang={s.lang} recording={cloze ? undefined : s.audio?.url} />
-            <span lang={s.lang} style={{ fontWeight: 700 }}>{expected}</span>
+            <span lang={s.lang} className="t-serif" style={{ fontWeight: 700, fontSize: '1.15em' }}>{expected}</span>
           </div>
-          {!result.correct ? <p className="tiny muted">Bu hata, hata defterine eklendi; ileride farklı bir örnekle tekrar çalışacaksın.</p> : null}
           <Continue onClick={() => onDone({ scored: true, correct: result.correct, senseIds: [s.id] })} />
         </>
       )}
@@ -369,58 +414,81 @@ function TypeStep({ step, ctx, onDone }: StepProps<Extract<Step, { kind: 'type' 
   )
 }
 
-function ProductionStep({ ctx, onDone, senses, task, prompt }: { ctx: PlayerCtx; onDone: (r: StepResult) => void; senses: Sense[]; task?: TaskSpec; prompt: string }) {
+const CAPABILITY: Record<EvaluatorState, string> = {
+  unconfigured:
+    'Şu an cümleleri değerlendiren bir hizmet bağlı değil. Cümlen pratik olarak kaydedilir; uygulama yalnızca hedef kelimenin geçip geçmediğine bakar.',
+  offline: 'Cümle değerlendirme ayarlı ama şu an internet yok. Cümlen kaydedilir ve bağlantı gelince değerlendirilir.',
+  ready: 'Cümlen değerlendirme için gönderilecek. Yalnızca cümle ve görev bilgisi gider.',
+}
+
+/** Kendi cümleni kur / görev. İsteğe bağlıdır; değerlendirme yoksa bunu baştan söyler ve sahte başarı göstermez. */
+export function ProductionStep({ ctx, onDone, senses, task, prompt }: { ctx: PlayerCtx; onDone: (r: StepResult) => void; senses: Sense[]; task?: TaskSpec; prompt: string }) {
   const [attempt, setAttempt] = useState<Attempt | null>(null)
   const [round, setRound] = useState(0)
-  const [showSamples, setShowSamples] = useState(false)
+  const [state] = useState<EvaluatorState>(() => evaluatorState(ctx.profile.evaluationEndpoint, typeof navigator === 'undefined' ? true : navigator.onLine))
   const t0 = useRef(Date.now())
   const lang = senses[0]?.lang ?? ctx.lang
   const submit = async (a: PreparedAnswer) => {
     const at = await submitProduction(ctx.repo, {
       lang, senses, task, mode: task ? task.mode : 'free', prompt, answer: a, hintsUsed: 0, elapsedMs: Date.now() - t0.current,
-      context: ctx.context, industryId: ctx.industryId,
+      context: ctx.context, industryId: ctx.industryId, evaluator: state,
     })
     setAttempt(at)
   }
+  const finish = () => onDone({ scored: false, senseIds: senses.map((s) => s.id) })
+  const target = attempt?.evaluation?.axes.targetWord
   return (
     <>
-      <p className="muted small">{task ? `Görev: ${task.title}` : 'Kendi cümleni kur'}</p>
-      <p style={{ fontSize: '1.15em', fontWeight: 600 }}>{prompt}</p>
+      <p className="step-label">{task ? `Görev: ${task.title}` : 'Cümle kur (isteğe bağlı)'}</p>
+      <p className="prompt">{prompt}</p>
       <div className="row">
         {senses.map((s) => (
           <span key={s.id} className="pill accent" lang={s.lang}>
-            {content.lemma(s)} · {content.gloss(s)}
+            {content.lemma(s)}: {content.gloss(s)}
           </span>
         ))}
       </div>
-      {!task ? <p className="tiny muted">Serbest cümle: istediğin anlamı kurabilirsin; tek bir "doğru cümle" beklenmiyor.</p> : null}
       {!attempt ? (
-        <AnswerInput key={round} lang={lang} multiline onSubmit={submit} submitLabel="Gönder" placeholder="Cümleni yaz" autoFocus={false} />
+        <>
+          <p className="small muted capability">{CAPABILITY[state]}</p>
+          <AnswerInput
+            key={round}
+            lang={lang}
+            multiline
+            onSubmit={submit}
+            submitLabel={state === 'unconfigured' ? 'Pratik cümlesini kaydet' : 'Gönder'}
+            placeholder="Cümleni yaz"
+            autoFocus={false}
+          />
+          <button className="btn btn-ghost" onClick={finish}>Bu adımı atla</button>
+        </>
       ) : (
         <>
-          <div className="example">
-            <span className="t" lang={lang}>{attempt.finalText}</span>
-            {attempt.recognitionEdited ? <span className="tiny muted">El yazısı tanıması düzeltildi (dil hatası sayılmadı).</span> : null}
-          </div>
-          <EvaluationView attempt={attempt} />
+          <Feedback tone="good" title="Cümlen kaydedildi.">
+            <p className="t" lang={lang}>{attempt.finalText}</p>
+            {attempt.recognitionEdited ? <p className="tiny muted">El yazısı tanıması düzeltildi (dil hatası sayılmadı).</p> : null}
+          </Feedback>
+          {state === 'unconfigured' ? (
+            target?.note ? <p className="small muted">{target.status === 'pass' ? 'Hedef kelime cümlende geçiyor.' : target.note}</p> : null
+          ) : (
+            <>
+              <p className="small muted">{attempt.evalStatus === 'pending' ? 'Değerlendirme bekliyor: bağlantı gelince yapılacak.' : ''}</p>
+              <EvaluationView attempt={attempt} />
+            </>
+          )}
           {task?.sampleAnswers?.length ? (
-            showSamples ? (
+            <details className="why">
+              <summary>Örnek cevaplar</summary>
               <div className="stack">
-                <h3>Örnek cevaplar (birden fazla doğru ifade olabilir)</h3>
+                <p className="small muted">Birden fazla doğru ifade olabilir. Örnekler uzman onaylı değildir.</p>
                 {task.sampleAnswers.map((x) => <ExampleBox key={x} text={x} lang={lang} />)}
               </div>
-            ) : (
-              <button className="btn btn-ghost" onClick={() => setShowSamples(true)}>Örnek cevapları göster</button>
-            )
+            </details>
           ) : null}
-          <div className="row">
-            <button className="btn" onClick={() => { setAttempt(null); setRound((r) => r + 1) }}>
-              <Icon.refresh /> Yeniden yaz
-            </button>
-            <div style={{ flex: 1 }}>
-              <Continue onClick={() => onDone({ scored: false, senseIds: senses.map((s) => s.id) })} />
-            </div>
-          </div>
+          <button className="btn" onClick={() => { setAttempt(null); setRound((r) => r + 1) }}>
+            <Icon.refresh /> Yeniden yaz
+          </button>
+          <Continue onClick={finish} />
         </>
       )}
     </>
@@ -432,17 +500,25 @@ export interface PlayerProps {
   steps: Step[]
   ctx: PlayerCtx
   startAt?: number
-  onStep?: (nextIndex: number) => void
+  /** Her adım bittiğinde: sıradaki adımın sırası, (eklenmiş adımlarla) güncel adım listesi ve sonuç */
+  onStep?: (nextIndex: number, steps: Step[], result: StepResult) => void
+  /** Sonuca göre sona eklenecek adımlar (ör. yanlış cevaplanan yeni kelime için bir soru daha) */
+  extend?: (index: number, result: StepResult) => Step[]
   onFinish?: (results: StepResult[]) => void
   onClose: () => void
   /** Bitiş ekranında gösterilecek ek içerik */
   finishExtra?: (results: StepResult[]) => ReactNode
+  /** Bitiş ekranının tamamı (verilirse varsayılanın yerine) */
+  renderFinish?: (results: StepResult[]) => ReactNode
   finishLabel?: string
   showNextDue?: boolean
+  /** Üst bilgi (ör. eski düzende devam eden ders notu) */
+  notice?: ReactNode
 }
 
-export function Player({ title, steps, ctx, startAt = 0, onStep, onFinish, onClose, finishExtra, finishLabel = 'Bitir', showNextDue = true }: PlayerProps) {
-  const [index, setIndex] = useState(Math.min(startAt, steps.length))
+export function Player({ title, steps: initial, ctx, startAt = 0, onStep, extend, onFinish, onClose, finishExtra, renderFinish, finishLabel = 'Bitir', showNextDue = true, notice }: PlayerProps) {
+  const [steps, setSteps] = useState(initial)
+  const [index, setIndex] = useState(Math.min(startAt, initial.length))
   const [results, setResults] = useState<StepResult[]>([])
   const [due, setDue] = useState<{ sense: Sense; due: number }[]>([])
   const finished = index >= steps.length
@@ -451,10 +527,13 @@ export function Player({ title, steps, ctx, startAt = 0, onStep, onFinish, onClo
   const done = (r: StepResult) => {
     const next = index + 1
     const all = [...results, r]
+    const added = extend?.(index, r) ?? []
+    const list = added.length ? [...steps, ...added] : steps
+    if (added.length) setSteps(list)
     setResults(all)
-    onStep?.(next)
+    onStep?.(next, list, r)
     setIndex(next)
-    if (next >= steps.length) onFinish?.(all)
+    if (next >= list.length) onFinish?.(all)
   }
 
   const senseIds = useMemo(() => [...new Set(steps.flatMap(stepSenseIds))], [steps])
@@ -487,11 +566,12 @@ export function Player({ title, steps, ctx, startAt = 0, onStep, onFinish, onClo
           <Icon.close />
         </button>
         <Progress value={steps.length ? index / steps.length : 1} label={`${title} ilerlemesi`} />
-        <span className="small muted" aria-hidden="true">
+        <span className="small muted step-count" aria-hidden="true">
           {Math.min(index + 1, steps.length)}/{steps.length}
         </span>
       </div>
       <div className="player-body">
+        {notice && !finished ? <div className="player-notice small">{notice}</div> : null}
         {!finished && step ? (
           <div className="player-inner" key={index}>
             {step.kind === 'intro' ? <IntroStep step={step} ctx={ctx} onDone={done} /> : null}
@@ -505,34 +585,41 @@ export function Player({ title, steps, ctx, startAt = 0, onStep, onFinish, onClo
               <ProductionStep ctx={ctx} onDone={done} task={step.task} prompt={step.task.prompt} senses={step.task.targetSenseIds.map((id) => content.sense(id))} />
             ) : null}
           </div>
+        ) : renderFinish ? (
+          <div className="player-inner">{renderFinish(results)}</div>
         ) : (
           <div className="player-inner">
-            <h1>{title}: tamamlandı</h1>
+            <h1>{title} tamamlandı</h1>
             {scored.length ? (
-              <p className="muted">
-                Puanlanan {scored.length} alıştırmanın {correct} tanesi doğru. Bu bir sınav notu değil; tekrar zamanlarını belirlemek için kullanılır.
+              <p>
+                {scored.length} sorudan {correct} tanesi doğru.
               </p>
             ) : null}
             {finishExtra?.(results)}
-            {showNextDue && due.length ? (
-              <div className="card flat">
-                <h3>Sonraki tekrarlar</h3>
-                <div className="list">
-                  {due.map((d) => (
-                    <div className="list-item" key={d.sense.id}>
-                      <span className="grow" lang={d.sense.lang}>
-                        <b>{content.lemma(d.sense)}</b> <span className="muted small">· {content.gloss(d.sense)}</span>
-                      </span>
-                      <span className="pill">{formatDue(d.due)}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            ) : null}
+            {showNextDue && due.length ? <NextDue due={due} /> : null}
             <Continue onClick={onClose} label={finishLabel} />
           </div>
         )}
       </div>
     </div>
+  )
+}
+
+/** Sonraki tekrar zamanları (bitiş ekranında, açılır) */
+export function NextDue({ due }: { due: { sense: Sense; due: number }[] }) {
+  return (
+    <details className="details">
+      <summary>Sonraki tekrarlar</summary>
+      <div className="list">
+        {due.map((d) => (
+          <div className="list-item" key={d.sense.id}>
+            <span className="grow" lang={d.sense.lang}>
+              <b className="t-serif">{content.lemma(d.sense)}</b> <span className="muted small">{content.gloss(d.sense)}</span>
+            </span>
+            <span className="pill">{formatDue(d.due)}</span>
+          </div>
+        ))}
+      </div>
+    </details>
   )
 }

@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useApp } from '../app/context'
 import { GLOSS_SOURCE_LABEL } from '../content/generated'
 import { getLanguage } from '../content/languages'
 import { content } from '../content/registry'
 import type { Example, Sense } from '../content/types'
-import type { AxisStatus, Profile } from '../domain/types'
+import type { AxisStatus, ContentReport, Profile } from '../domain/types'
 import { play, preloadRecording } from './audio'
 import { Icon } from './icons'
 import { Illustration } from './illustrations'
@@ -67,8 +68,8 @@ export function StatusPill({ status }: { status: AxisStatus }) {
 /** Ses düğmesi: her zaman görünür. Önce insan kaydı, yoksa cihaz sesi. Çalmazsa bunu açıkça söyler. */
 let ttsHintShown = false
 
-export function AudioButton({ text, lang, recording, label = 'Dinle', big = false }: { text: string; lang: string; recording?: string; label?: string; big?: boolean }) {
-  const [state, setState] = useState<'idle' | 'fail' | 'synthetic' | 'hint'>('idle')
+export function AudioButton({ text, lang, recording, label = 'Dinle', big = false, showLabel = false }: { text: string; lang: string; recording?: string; label?: string; big?: boolean; showLabel?: boolean }) {
+  const [state, setState] = useState<'idle' | 'playing' | 'ok' | 'fail' | 'synthetic' | 'hint'>('idle')
   // Kayıt verilmediyse kelimenin kaydı aranır; dokunma anında yeniden bakılır (paket sonradan yüklenmiş olabilir)
   const findRecording = () => recording ?? content.wordSense(lang, text)?.audio?.url
   useEffect(() => {
@@ -76,25 +77,36 @@ export function AudioButton({ text, lang, recording, label = 'Dinle', big = fals
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [recording, lang, text])
   const onClick = () => {
+    setState('playing')
     play({ text, lang, recording: findRecording() }).then((o) => {
       // Cihaz sesi sessiz modda duyulmayabilir: oturumda ilk kez cihaz sesi çalınca bir kez hatırlat
       const hint = o === 'tts' && !ttsHintShown
       if (hint) ttsHintShown = true
-      setState(o === 'failed' ? 'fail' : o === 'tts-no-voice' ? 'synthetic' : hint ? 'hint' : 'idle')
+      setState(o === 'failed' ? 'fail' : o === 'tts-no-voice' ? 'synthetic' : hint ? 'hint' : 'ok')
     })
   }
+  const source = findRecording() ? 'insan sesi kaydı' : 'cihaz sesi'
   return (
     <span className="audio-wrap">
-      <button type="button" className={big ? 'big-audio' : 'btn btn-soft btn-icon'} onClick={onClick} aria-label={`${label} (${findRecording() ? 'insan sesi kaydı' : 'cihaz sesi'})`}>
+      <button
+        type="button"
+        className={big ? 'big-audio' : showLabel ? 'btn btn-soft audio-btn' : 'btn btn-soft btn-icon'}
+        onClick={onClick}
+        aria-label={`${label} (${source})`}
+        data-state={state === 'playing' ? 'playing' : undefined}
+      >
         <Icon.play />
+        {showLabel && !big ? <span aria-hidden="true">{label}</span> : null}
       </button>
-      {state === 'fail' ? (
-        <a className="tiny" href="#/sound-test">
-          Ses çalınamadı · Ses testi
-        </a>
-      ) : null}
-      {state === 'synthetic' ? <span className="tiny muted">Bu dilde cihaz sesi bulunamadı</span> : null}
-      {state === 'hint' ? <span className="tiny muted">Duymuyorsan sessiz modu kapatmayı dene.</span> : null}
+      <span className="audio-status" role="status">
+        {state === 'fail' ? (
+          <a className="tiny" href="#/sound-test">
+            Ses çalınamadı. Ses testine bak
+          </a>
+        ) : null}
+        {state === 'synthetic' ? <span className="tiny muted">Bu dilde cihaz sesi yok</span> : null}
+        {state === 'hint' ? <span className="tiny muted">Duymuyorsan sessiz modu kapat.</span> : null}
+      </span>
     </span>
   )
 }
@@ -111,63 +123,43 @@ export function SenseImage({ sense, size }: { sense: Sense; size?: number }) {
   )
 }
 
-/** Kelime başlığı: hedef dildeki yazılış her zaman görünür; telaffuz yardımları ayara göre azalır. */
-export function WordHeader({ sense, profile, showGloss = true, small = false }: { sense: Sense; profile: Profile; showGloss?: boolean; small?: boolean }) {
+/** Hedef dildeki yazılış (telaffuz yardımı açıksa Rusça vurgu işaretiyle) */
+export function displayForm(sense: Sense, profile: Profile): string {
   const lex = content.lexemes.get(sense.lexemeId)
-  const lang = getLanguage(sense.lang)
   const aid = profile.pronunciationAid[sense.lang] ?? 'full'
-  const pron = lex?.pronunciation
-  const display = aid !== 'none' && pron?.stressed ? pron.stressed : (lex?.lemma ?? sense.forms[0])
+  return aid !== 'none' && lex?.pronunciation?.stressed ? lex.pronunciation.stressed : (lex?.lemma ?? sense.forms[0])
+}
+
+/** Kelime başlığı: hedef dildeki yazılış (sözlük madde başı gibi, serif) ve belirgin "Dinle" düğmesi. */
+export function Headword({ sense, profile, size = 'lg', audio = true }: { sense: Sense; profile: Profile; size?: 'lg' | 'md' | 'sm'; audio?: boolean }) {
+  const lex = content.lexemes.get(sense.lexemeId)
   return (
-    <div className="stack" style={{ gap: 6 }}>
-      <div className="row">
-        <span className={small ? 'word-sm' : 'word'} lang={sense.lang}>
-          {display}
-        </span>
-        <AudioButton text={lex?.lemma ?? sense.forms[0]} lang={sense.lang} recording={sense.audio?.url} />
-      </div>
-      {aid === 'full' && pron && (pron.translit || pron.approx || pron.ipa) ? (
-        <div className="pron">
-          {pron.translit ? (
-            <span>
-              Harf çevirisi: <b>{pron.translit}</b>
-            </span>
-          ) : null}
-          {pron.approx ? (
-            <span>
-              Yaklaşık söyleyiş: <b>{pron.approx}</b>
-            </span>
-          ) : null}
-          {pron.ipa && !small ? (
-            <span>
-              IPA: <b>{pron.ipa}</b>
-            </span>
-          ) : null}
-        </div>
-      ) : null}
-      {aid === 'full' && pron?.note && !small ? <p className="tiny muted">{pron.note}</p> : null}
-      {lang.script === 'Cyrillic' && aid !== 'none' && pron?.stressed && !small ? <p className="tiny muted">´ işareti vurgulu heceyi gösterir; normal metinlerde yazılmaz.</p> : null}
-      {showGloss ? <GlossLine sense={sense} profile={profile} /> : null}
+    <div className={`headword ${size}`}>
+      <span className="word" lang={sense.lang}>
+        {displayForm(sense, profile)}
+      </span>
+      {audio ? <AudioButton text={lex?.lemma ?? sense.forms[0]} lang={sense.lang} recording={sense.audio?.url} showLabel={size !== 'sm'} /> : null}
     </div>
   )
 }
 
-/** Türkçe anlam + (açık veride) İngilizce anlam ve Türkçenin kaynağı */
+/** Tek anlam (seçilen açıklama dilinde) ve kelime türü */
 export function GlossLine({ sense, profile }: { sense: Sense; profile: Profile }) {
   return (
-    <div className="stack" style={{ gap: 2 }}>
-      <p style={{ fontSize: '1.1em' }}>
-        {sense.posLabel ? <span className="pill" style={{ marginRight: 6 }}>{sense.posLabel}</span> : null}
-        {content.gloss(sense, profile.explanationLang)}
-      </p>
-      {sense.generated && profile.explanationLang === 'tr' && sense.glossEn ? (
-        <p className="tiny muted">
-          İngilizce: {sense.glossEn}
-          {sense.glossSource && sense.glossSource !== 'en-only' ? ` · Türkçe: ${GLOSS_SOURCE_LABEL[sense.glossSource]}` : ''}
-        </p>
-      ) : null}
-    </div>
+    <p className="meaning">
+      <span>{content.gloss(sense, profile.explanationLang)}</span>
+      {sense.posLabel ? <span className="pos">{sense.posLabel}</span> : null}
+    </p>
   )
+}
+
+/** Kelimeyi anlamak ve kullanmak için gerekli dilbilgisi (ör. Rusçada cinsiyet) varsayılan kartta görünür. */
+export function essentialGrammar(sense: Sense): string | undefined {
+  const g = content.lexemes.get(sense.lexemeId)?.grammar
+  if (!g) return undefined
+  const keep = ['cinsiyet', 'artikel', 'çoğul']
+  const parts = Object.entries(g).filter(([k]) => keep.includes(k))
+  return parts.length ? parts.map(([k, v]) => `${k}: ${v}`).join(', ') : undefined
 }
 
 const TR_SOURCE_NOTE: Record<NonNullable<Example['trSource']>, string> = { human: '', mt: ' (makine çevirisi)', 'en-only': ' (İngilizce çeviri)' }
@@ -175,7 +167,7 @@ const TR_SOURCE_NOTE: Record<NonNullable<Example['trSource']>, string> = { human
 export function ExampleBox({ text, tr, lang, trSource }: { text: string; tr?: string; lang: string; trSource?: Example['trSource'] }) {
   return (
     <div className="example">
-      <div className="row" style={{ justifyContent: 'space-between', flexWrap: 'nowrap' }}>
+      <div className="example-row">
         <span className="t" lang={lang}>
           {text}
         </span>
@@ -198,56 +190,64 @@ const VALIDATION_LABEL: Record<Sense['validation'], string> = {
   'expert-reviewed': 'uzman onaylı',
 }
 
-/** Bir anlamın tam kartı: görsel, açıklama, örnekler, eşdizimler, eşanlamlılar, diğer anlamlar, kaynak. */
-export function SenseDetail({ sense, profile, onLearnSense, learnedIds }: { sense: Sense; profile: Profile; onLearnSense?: (s: Sense) => void; learnedIds?: Set<string> }) {
-  const visual = content.visual(sense)
-  const others = content.otherSenses(sense)
+/** "Okunuş ve ayrıntılar": telaffuz yardımları, İngilizce anlam, diğer anlamlar, yakın anlamlılar, dilbilgisi,
+ *  kaynak ve lisans. Varsayılan kartı sade tutmak için kapalı başlar. */
+export function WordDetails({ sense, profile, onLearnSense, learnedIds, open = false, report = true }: { sense: Sense; profile: Profile; onLearnSense?: (s: Sense) => void; learnedIds?: Set<string>; open?: boolean; report?: boolean }) {
   const lex = content.lexemes.get(sense.lexemeId)
+  const pron = lex?.pronunciation
+  const others = content.otherSenses(sense)
+  const visual = content.visual(sense)
+  const info = getLanguage(sense.lang)
+  const grammar = lex?.grammar ? Object.entries(lex.grammar).map(([k, v]) => `${k}: ${v}`).join(', ') : ''
   return (
-    <div className="stack">
-      <div className="sense-hero">
-        {visual ? <SenseImage sense={sense} /> : <div />}
-        <WordHeader sense={sense} profile={profile} />
-      </div>
-      {!sense.generated && sense.explanation ? <p>{sense.explanation}</p> : null}
-      {lex?.grammar ? (
-        <p className="small muted">
-          {Object.entries(lex.grammar)
-            .map(([k, v]) => `${k}: ${v}`)
-            .join(' · ')}
-        </p>
-      ) : null}
-      {sense.examples.map((e) => (
-        <ExampleBox key={e.id} text={e.text} tr={e.tr} lang={sense.lang} trSource={e.trSource} />
-      ))}
-      {sense.collocations?.length ? (
-        <div>
-          <h3>Sık birlikte kullanılanlar</h3>
-          <ul className="small">{sense.collocations.map((c) => <li key={c} lang={sense.lang}>{c}</li>)}</ul>
-        </div>
-      ) : null}
-      {sense.synonyms?.length ? (
-        <div>
-          <h3>Yakın anlamlılar ve farkları</h3>
-          <ul className="small">
-            {sense.synonyms.map((s) => (
-              <li key={s.text}>
-                <b lang={sense.lang}>{s.text}</b> — {s.note}
-              </li>
-            ))}
-          </ul>
-        </div>
-      ) : null}
-      {sense.usageNote ? <div className="notice">{sense.usageNote}</div> : null}
-      {sense.morphology ? <p className="small"><b>Kelime yapısı:</b> {sense.morphology}</p> : null}
-      {others.length ? (
-        <div className="notice warn">
-          <div className="stack" style={{ gap: 6 }}>
-            <span>Bu kelimenin başka anlamları da var. Her anlam ayrı izlenir; önce yaygın anlam öğretilir.</span>
+    <details className="details" open={open}>
+      <summary>Okunuş ve ayrıntılar</summary>
+      <div className="details-body">
+        {pron && (pron.translit || pron.approx || pron.ipa) ? (
+          <dl className="facts">
+            {pron.translit ? (<><dt>Harf çevirisi</dt><dd>{pron.translit}</dd></>) : null}
+            {pron.approx ? (<><dt>Yaklaşık söyleyiş</dt><dd>{pron.approx}</dd></>) : null}
+            {pron.ipa ? (<><dt>IPA</dt><dd>{pron.ipa}</dd></>) : null}
+          </dl>
+        ) : null}
+        {pron?.note ? <p className="small">{pron.note}</p> : null}
+        {info.script === 'Cyrillic' && pron?.stressed ? <p className="small muted">´ işareti vurgulu heceyi gösterir; normal metinlerde yazılmaz.</p> : null}
+        {!sense.generated && sense.explanation ? <p className="small">{sense.explanation}</p> : null}
+        {sense.generated && sense.glossEn ? (
+          <p className="small">
+            İngilizce: {sense.glossEn}
+            {sense.glossSource && sense.glossSource !== 'en-only' ? <span className="muted"> (Türkçe anlamın kaynağı: {GLOSS_SOURCE_LABEL[sense.glossSource]})</span> : null}
+          </p>
+        ) : null}
+        {grammar ? <p className="small">Dilbilgisi: {grammar}</p> : null}
+        {sense.usageNote ? <p className="small">{sense.usageNote}</p> : null}
+        {sense.morphology ? <p className="small">Kelime yapısı: {sense.morphology}</p> : null}
+        {sense.collocations?.length ? (
+          <div className="small">
+            <b>Sık birlikte kullanılanlar</b>
+            <ul>{sense.collocations.map((c) => <li key={c} lang={sense.lang}>{c}</li>)}</ul>
+          </div>
+        ) : null}
+        {sense.synonyms?.length ? (
+          <div className="small">
+            <b>Yakın anlamlılar ve farkları</b>
+            <ul>
+              {sense.synonyms.map((x) => (
+                <li key={x.text}>
+                  <span lang={sense.lang}>{x.text}</span>: {x.note}
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+        {others.length ? (
+          <div className="small stack" style={{ gap: 6 }}>
+            <b>Bu kelimenin başka anlamları</b>
+            <span className="muted">Her anlam ayrı öğrenilir; önce en yaygın anlam öğretilir.</span>
             {others.map((o) => (
               <div className="spread" key={o.id}>
                 <span>
-                  {o.senseIndex}. {o.posLabel ? `(${o.posLabel}) ` : ''}
+                  {o.posLabel ? `(${o.posLabel}) ` : ''}
                   {content.gloss(o)}
                 </span>
                 {onLearnSense && !learnedIds?.has(o.id) ? (
@@ -260,23 +260,137 @@ export function SenseDetail({ sense, profile, onLearnSense, learnedIds }: { sens
               </div>
             ))}
           </div>
-        </div>
-      ) : null}
-      <p className="tiny muted">
-        {sense.rank ? `Sıklık sırası #${sense.rank} · ` : sense.level ? `Seviye ${sense.level} · ` : ''}
-        Kaynak: {sense.source} · Doğrulama: {VALIDATION_LABEL[sense.validation]}
-        {visual?.kind === 'illustration' ? ` · Görsel: ${visual.asset.author}` : visual?.kind === 'emoji' ? ' · Görsel: emoji (otomatik eşleşme)' : ''}
-      </p>
-      {sense.audio ? (
+        ) : null}
         <p className="tiny muted">
-          Ses kaydı:{' '}
-          <a href={`https://commons.wikimedia.org/wiki/File:${encodeURIComponent(sense.audio.file)}`} target="_blank" rel="noreferrer">
-            {sense.audio.file}
-          </a>{' '}
-          (Wikimedia Commons; lisans dosya sayfasında)
+          {sense.rank ? `Sıklık sırası: ${sense.rank}. ` : ''}
+          Kaynak: {sense.source}. Doğrulama: {VALIDATION_LABEL[sense.validation]}.
+          {visual?.kind === 'illustration' ? ` Görsel: ${visual.asset.author}.` : visual?.kind === 'emoji' ? ' Görsel: emoji (otomatik eşleşme).' : ''}
         </p>
-      ) : null}
+        {sense.audio ? (
+          <p className="tiny muted">
+            Ses kaydı:{' '}
+            <a href={`https://commons.wikimedia.org/wiki/File:${encodeURIComponent(sense.audio.file)}`} target="_blank" rel="noreferrer">
+              {sense.audio.file}
+            </a>{' '}
+            (Wikimedia Commons; lisans dosya sayfasında)
+          </p>
+        ) : null}
+        {report ? <ReportButton lang={sense.lang} senseId={sense.id} word={content.lemma(sense)} context="kelime kartı" /> : null}
+      </div>
+    </details>
+  )
+}
+
+/** Sözlük görünümü (Keşfet › Kelimeler): sade kart + ayrıntılar */
+export function SenseDetail({ sense, profile, onLearnSense, learnedIds }: { sense: Sense; profile: Profile; onLearnSense?: (s: Sense) => void; learnedIds?: Set<string> }) {
+  const ex = sense.examples
+  const grammar = essentialGrammar(sense)
+  return (
+    <div className="stack">
+      <div className="sense-hero">
+        <SenseImage sense={sense} />
+        <div className="stack" style={{ gap: 6 }}>
+          <Headword sense={sense} profile={profile} />
+          <GlossLine sense={sense} profile={profile} />
+          {grammar ? <p className="small muted">{grammar}</p> : null}
+        </div>
+      </div>
+      {ex.map((e) => (
+        <ExampleBox key={e.id} text={e.text} tr={e.tr} lang={sense.lang} trSource={e.trSource} />
+      ))}
+      <WordDetails sense={sense} profile={profile} onLearnSense={onLearnSense} learnedIds={learnedIds} />
     </div>
+  )
+}
+
+const ISSUES: { value: ContentReport['issue']; label: string }[] = [
+  { value: 'meaning', label: 'Anlam yanlış' },
+  { value: 'translation', label: 'Çeviri yanlış' },
+  { value: 'example', label: 'Örnek uygun değil' },
+  { value: 'audio', label: 'Ses yanlış' },
+  { value: 'other', label: 'Başka' },
+]
+
+/** Şüpheli içeriği bildir. Bildirim yalnızca bu cihazda saklanır; hiçbir yere gönderilmez. */
+export function ReportButton({ lang, senseId, word, context }: { lang: string; senseId?: string; word: string; context: string }) {
+  const { repo, session } = useApp()
+  const [open, setOpen] = useState(false)
+  const [issue, setIssue] = useState<ContentReport['issue']>('meaning')
+  const [note, setNote] = useState('')
+  const [saved, setSaved] = useState(false)
+  const guest = session.mode === 'guest'
+  const save = async () => {
+    await repo.addReport({ lang, senseId, word, issue, note: note.trim(), context })
+    setSaved(true)
+  }
+  const close = () => {
+    setOpen(false)
+    setSaved(false)
+    setNote('')
+  }
+  return (
+    <>
+      <button type="button" className="btn btn-ghost btn-small" onClick={() => setOpen(true)}>
+        <Icon.flag /> Bu içerikte sorun var
+      </button>
+      <Dialog open={open} onClose={close} title="İçerik sorunu bildir">
+        {saved ? (
+          <>
+            <p>Bildirimin kaydedildi.</p>
+            <p className="small muted">
+              {guest ? 'Demo bitince misafir verileriyle birlikte silinir.' : 'Profil › Yardım › İçerik bildirimlerim bölümünde görebilir ve kopyalayabilirsin.'}
+            </p>
+            <button className="btn btn-primary" onClick={close}>Tamam</button>
+          </>
+        ) : (
+          <>
+            <p>
+              <b lang={lang}>{word}</b> <span className="muted small">({context})</span>
+            </p>
+            <div className="field">
+              <span className="label">Sorun ne?</span>
+              <Chips label="Sorun türü" values={[issue]} options={ISSUES} onToggle={(v) => setIssue(v as ContentReport['issue'])} />
+            </div>
+            <div className="field">
+              <label htmlFor="report-note">Not (isteğe bağlı)</label>
+              <textarea id="report-note" className="input" rows={3} value={note} onChange={(e) => setNote(e.target.value)} placeholder="ör. doğru çeviri: Bu asla bitmeyecek." />
+            </div>
+            <p className="small muted">
+              Bildirim yalnızca bu cihazda saklanır, hiçbir yere gönderilmez. Düzeltilmesi için listeyi kopyalayıp geliştiriciye iletebilirsin.
+            </p>
+            <button className="btn btn-primary" onClick={() => void save()}>Bildirimi kaydet</button>
+          </>
+        )}
+      </Dialog>
+    </>
+  )
+}
+
+/** Gezinme satırı: başlık, kısa açıklama, sağda ok */
+export function LinkRow({ href, title, detail, icon, onClick }: { href?: string; title: ReactNode; detail?: ReactNode; icon?: ReactNode; onClick?: () => void }) {
+  const inner = (
+    <>
+      {icon ? <span className="row-icon" aria-hidden="true">{icon}</span> : null}
+      <span className="grow">
+        <span className="row-title">{title}</span>
+        {detail ? <span className="row-detail">{detail}</span> : null}
+      </span>
+      <span className="chev" aria-hidden="true"><Icon.chevron /></span>
+    </>
+  )
+  return href ? (
+    <a className="link-row" href={href}>{inner}</a>
+  ) : (
+    <button type="button" className="link-row" onClick={onClick}>{inner}</button>
+  )
+}
+
+/** Alt sayfalarda üst bölüme dönüş */
+export function BackLink({ href, label }: { href: string; label: string }) {
+  return (
+    <a className="back-link" href={href}>
+      <Icon.back /> {label}
+    </a>
   )
 }
 

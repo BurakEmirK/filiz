@@ -9,6 +9,8 @@ export interface AppState {
   repo: Repository
   profile: Profile
   updateProfile: (patch: Partial<Profile>) => Promise<void>
+  /** Profili veritabanından yeniden okur ve ekranları yeniler (ör. yedek yüklendikten sonra) */
+  reloadProfile: () => Promise<void>
   /** Veri değiştiğinde ekranları yenilemek için sayaç */
   dataVersion: number
   bump: () => void

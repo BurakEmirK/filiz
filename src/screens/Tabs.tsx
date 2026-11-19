@@ -7,9 +7,8 @@ import { content } from '../content/registry'
 import { soundModule } from '../content/sounds'
 import type { Lesson } from '../content/types'
 import { computeCareer, WORD_STEPS } from '../domain/career'
-import { getTodayPlan } from '../domain/services'
 import type { CareerGoal, LessonState } from '../domain/types'
-import { Card, LangSwitcher, Progress, SenseImage, WordHeader } from '../ui/components'
+import { BackLink, Card, LangSwitcher, Progress } from '../ui/components'
 import { Icon } from '../ui/icons'
 
 export function ContentGate({ lang, children }: { lang: string; children: ReactNode }) {
@@ -20,123 +19,6 @@ export function ContentGate({ lang, children }: { lang: string; children: ReactN
       {st.error ? <div className="page"><div className="notice warn">Sık kelime paketi yüklenemedi: {st.error}. Başlangıç dersleri çalışır.</div></div> : null}
       {children}
     </>
-  )
-}
-
-export function TodayScreen({ recovered }: { recovered: boolean }) {
-  const { profile } = useApp()
-  return (
-    <ContentGate lang={profile.activeLang}>
-      <TodayInner recovered={recovered} />
-    </ContentGate>
-  )
-}
-
-function TodayInner({ recovered }: { recovered: boolean }) {
-  const { repo, profile, updateProfile, dataVersion } = useApp()
-  const lang = profile.activeLang
-  const { data: plan } = useAsync(() => getTodayPlan(repo, profile, lang), [lang, dataVersion, profile.dailyMinutes, profile.newPerDay])
-  const states = useAsync(() => repo.lessonStates(lang), [lang, dataVersion])
-  const career = useAsync(async () => (profile.career ? computeCareer(repo, profile.career) : null), [dataVersion, profile.career])
-  const inProgress = states.data?.find((s) => s.status === 'in-progress')
-  const nextLesson = content.coreLessons(lang).find((l) => !states.data?.some((s) => s.lessonId === l.id && s.status !== 'in-progress'))
-  const wod = plan?.wordOfDay ? content.senses.get(plan.wordOfDay.senseId) : undefined
-  const info = getLanguage(lang)
-  const knowsLang = profile.knownLanguages.some((k) => k.lang === lang)
-  const soundLessons = content.soundLessons(lang)
-  const soundsDone = soundLessons.filter((l) => states.data?.some((s) => s.lessonId === l.id && s.status !== 'in-progress')).length
-  const suggestSounds = !knowsLang && soundLessons.length > 0 && soundsDone < soundLessons.length
-
-  return (
-    <div className="page">
-      <div className="page-head">
-        <div>
-          <h1>Bugün</h1>
-          <p>{info.nameTr} · günlük hedef {profile.dailyMinutes} dk</p>
-        </div>
-        <LangSwitcher value={lang} options={profile.targetLanguages} onChange={(l) => updateProfile({ activeLang: l })} />
-      </div>
-
-      {recovered ? <div className="notice warn">Yarım kalmış bir demo oturumu vardı. Misafir verileri silindi; senin kayıtların değişmedi.</div> : null}
-
-      {suggestSounds ? (
-        <Card title="Sıfırdan başlıyorsan: Sesler ve Harfler" icon={<Icon.learn />} className="accent">
-          <p className="small">{soundModule(lang)?.intro}</p>
-          <Progress value={soundsDone / soundLessons.length} label="Sesler ve Harfler ilerlemesi" />
-          <button className="btn btn-primary" onClick={() => go(`#/lesson/${(soundLessons.find((l) => !states.data?.some((s) => s.lessonId === l.id && s.status !== 'in-progress')) ?? soundLessons[0]).id}`)}>
-            {soundsDone ? 'Devam et' : 'Başla'}
-          </button>
-        </Card>
-      ) : null}
-
-      <div className="grid-2">
-        {wod ? (
-          <Card title="Günün Kelimesi" icon={<Icon.sparkle />} className={suggestSounds ? '' : 'accent'}>
-            <div className="sense-hero compact">
-              <SenseImage sense={wod} />
-              <WordHeader sense={wod} profile={profile} small />
-            </div>
-            {plan?.wordOfDay?.relatedSenseIds.length ? (
-              <p className="small muted">
-                Bağlantılı tekrar: {plan.wordOfDay.relatedSenseIds.map((id) => content.senses.get(id)).filter(Boolean).map((s) => content.lemma(s!)).join(', ')}
-              </p>
-            ) : null}
-            <button className="btn btn-primary" onClick={() => go('#/wod')}>
-              Günün kelimesini çalış
-            </button>
-          </Card>
-        ) : null}
-
-        <Card title="Tekrar" icon={<Icon.refresh />}>
-          {plan ? (
-            <>
-              <p>
-                <b style={{ fontSize: '1.6em' }}>{plan.due.length}</b> <span className="muted">tekrar zamanı gelen öğe · ≈{plan.budget.reviewMinutes} dk</span>
-              </p>
-              <button className="btn btn-primary" disabled={plan.due.length === 0} onClick={() => go('#/review')}>
-                {plan.due.length ? 'Tekrara başla' : 'Şu an tekrar yok'}
-              </button>
-            </>
-          ) : (
-            <p className="muted">Yükleniyor…</p>
-          )}
-        </Card>
-
-        <Card title="Yeni öğrenme" icon={<Icon.learn />}>
-          {plan ? <p className="small muted">{plan.budget.reason}</p> : null}
-          {inProgress && content.lessons.get(inProgress.lessonId) ? (
-            <button className="btn btn-primary" onClick={() => go(`#/lesson/${inProgress.lessonId}`)}>
-              Devam et: {content.lessons.get(inProgress.lessonId)?.title}
-            </button>
-          ) : nextLesson ? (
-            <button className="btn btn-primary" onClick={() => go(`#/lesson/${nextLesson.id}`)}>
-              Sıradaki ders: {nextLesson.title}
-            </button>
-          ) : (
-            <p className="muted">Bu dildeki derslerin hepsi bitti.</p>
-          )}
-        </Card>
-
-        {career.data ? (
-          <Card title="Kariyer hedefin" icon={<Icon.flame />}>
-            <p className="small">{career.data.goal.title}</p>
-            <Progress value={career.data.overall} label="Kariyer hedefi ilerlemesi" />
-            <p className="tiny muted">
-              %{Math.round(career.data.overall * 100)} · {career.data.wordsIntroduced}/{career.data.goal.targetWords} kelime
-              {career.data.projectedDate ? ` · bu hızla tahmini bitiş ${career.data.projectedDate}` : ''}
-            </p>
-            <button className="btn" onClick={() => go('#/career')}>Yol haritasını gör</button>
-          </Card>
-        ) : null}
-
-        <Card title="Değerlendirme bekleyenler" icon={<Icon.clock />}>
-          <p>
-            <b>{plan?.pendingCount ?? 0}</b> <span className="muted">cümle çevrimiçi değerlendirmeyi bekliyor.</span>
-          </p>
-          <p className="tiny muted">Çevrimiçi değerlendirme sonraki aşamada bağlanacak. Cevapların kaybolmaz.</p>
-        </Card>
-      </div>
-    </div>
   )
 }
 
@@ -160,47 +42,22 @@ function LearnInner() {
   const freq = all.filter((l) => l.id.startsWith('g-'))
   const units = new Map<number, Lesson[]>()
   for (const l of freq) units.set(l.unit ?? 1, [...(units.get(l.unit ?? 1) ?? []), l])
-  const soundLessons = content.soundLessons(lang)
-  const soundsDone = soundLessons.filter((l) => isDone(states, l.id)).length
   const statusOf = (id: string) => states?.find((s) => s.lessonId === id)
   const firstOpenUnit = [...units.entries()].find(([, ls]) => ls.some((l) => !isDone(states, l.id)))?.[0]
   const idx = content.indexes.get(lang)
 
-  const lessonRow = (l: Lesson) => {
-    const st = statusOf(l.id)
-    return (
-      <div className="spread" key={l.id} style={{ padding: '6px 0', borderTop: '1px solid var(--border)' }}>
-        <span className="small">
-          <b>{l.title}</b>
-          <span className="muted" lang={lang}> · {l.senseIds.map((id) => content.senses.get(id)).filter(Boolean).map((s) => content.lemma(s!)).join(', ')}</span>
-        </span>
-        <span className="row" style={{ gap: 6, flexWrap: 'nowrap' }}>
-          {st?.status === 'completed' ? <span className="pill good">✓</span> : st?.status === 'skipped-known' ? <span className="pill info">Biliyorum</span> : null}
-          <button className="btn btn-soft" onClick={() => go(`#/lesson/${l.id}`)}>
-            {st?.status === 'in-progress' ? 'Devam' : st ? 'Tekrar' : 'Başla'}
-          </button>
-        </span>
-      </div>
-    )
-  }
+  const lessonRow = (l: Lesson) => <LessonRow key={l.id} lesson={l} state={statusOf(l.id)} />
 
   return (
     <div className="page">
       <div className="page-head">
         <div>
-          <h1>Öğren</h1>
-          <p>Kısa dersler: tanı, dinle, yaz, kendi cümleni kur.</p>
+          <BackLink href="#/explore" label="Keşfet" />
+          <h1>Ders kütüphanesi</h1>
+          <p>Her ders 5 kelime: önce tanış, sonra tanı. Yazma ve cümle kurma sonraki tekrarlarda gelir.</p>
         </div>
         <LangSwitcher value={lang} options={profile.targetLanguages} onChange={(l) => updateProfile({ activeLang: l })} />
       </div>
-
-      {soundLessons.length ? (
-        <Card title="Sesler ve Harfler" icon={<Icon.pen />}>
-          <p className="small muted">{soundModule(lang)?.intro}</p>
-          <Progress value={soundLessons.length ? soundsDone / soundLessons.length : 0} label="Sesler ve Harfler ilerlemesi" />
-          <div>{soundLessons.map(lessonRow)}</div>
-        </Card>
-      ) : null}
 
       <Card title="Başlangıç dersleri" icon={<Icon.learn />}>
         <p className="tiny muted">Elle hazırlanmış, resimli kısa dersler.</p>
@@ -249,20 +106,96 @@ function LearnInner() {
         </>
       ) : null}
 
-      <Card title="Gerçek hayat görevleri" icon={<Icon.users />}>
-        <p className="muted">Alışveriş, ev kiralama ve üniversitede soru sorma görevleri sonraki aşamada eklenecek. İş görevleri şimdilik Kariyer → Tekstil içinde.</p>
-      </Card>
     </div>
   )
 }
 
-// ---------------------------------------------------------------- Kariyer
-export function CareerScreen({ langParam }: { langParam?: string | null }) {
+/** Ders kütüphanesi satırı */
+export function LessonRow({ lesson: l, state: st }: { lesson: Lesson; state?: LessonState }) {
+  return (
+    <div className="lesson-row">
+      <span className="grow">
+        <span className="row-title">{l.title}</span>
+        <span className="row-detail" lang={l.lang}>
+          {l.senseIds.map((id) => content.senses.get(id)).filter(Boolean).map((s) => content.lemma(s!)).join(', ')}
+        </span>
+      </span>
+      {st?.status === 'completed' ? <span className="pill good">Tamam</span> : st?.status === 'skipped-known' ? <span className="pill info">Biliyorum</span> : null}
+      <button className="btn btn-soft" onClick={() => go(`#/lesson/${l.id}`)}>
+        {st?.status === 'in-progress' ? 'Devam' : st ? 'Tekrar' : 'Başla'}
+      </button>
+    </div>
+  )
+}
+
+/** Sesler ve Harfler (Keşfet › Öğrenme yolu) */
+export function SoundsScreen() {
+  const { profile } = useApp()
+  return (
+    <ContentGate lang={profile.activeLang}>
+      <SoundsInner />
+    </ContentGate>
+  )
+}
+
+function SoundsInner() {
+  const { repo, profile, updateProfile, dataVersion } = useApp()
+  const lang = profile.activeLang
+  const { data: states } = useAsync(() => repo.lessonStates(lang), [lang, dataVersion])
+  const lessons = content.soundLessons(lang)
+  const done = lessons.filter((l) => isDone(states, l.id)).length
+  const next = lessons.find((l) => !isDone(states, l.id))
+  const notes = lang === 'hu' ? getLanguage('hu').letterNotes ?? [] : []
+  return (
+    <div className="page narrow">
+      <div className="page-head">
+        <div>
+          <BackLink href="#/explore" label="Keşfet" />
+          <h1>Sesler ve Harfler</h1>
+          <p>{soundModule(lang)?.intro}</p>
+        </div>
+        <LangSwitcher value={lang} options={profile.targetLanguages} onChange={(l) => updateProfile({ activeLang: l })} />
+      </div>
+      {lessons.length ? (
+        <>
+          <div className="stack" style={{ gap: 6 }}>
+            <p className="small muted">{lessons.length} dersin {done} tanesi tamam.</p>
+            <Progress value={done / lessons.length} label="Sesler ve Harfler ilerlemesi" />
+          </div>
+          {next ? (
+            <button className="btn btn-primary" onClick={() => go(`#/lesson/${next.id}`)}>
+              {done ? 'Sıradaki derse devam et' : 'İlk dersle başla'}
+            </button>
+          ) : null}
+          <div className="rows">{lessons.map((l) => <LessonRow key={l.id} lesson={l} state={states?.find((s) => s.lessonId === l.id)} />)}</div>
+        </>
+      ) : (
+        <p className="muted">Bu dil için Sesler ve Harfler bölümü yok.</p>
+      )}
+      {notes.length ? (
+        <details className="details">
+          <summary>Macarca harf notları (Türkçe konuşanlar için)</summary>
+          <div className="list small">
+            {notes.map((n) => (
+              <div className="list-item" key={n.letters}>
+                <b style={{ minWidth: 90 }} lang="hu">{n.letters}</b>
+                <span>{n.note}</span>
+              </div>
+            ))}
+          </div>
+        </details>
+      ) : null}
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------- Hedef (Profil › Hedef) ve sektörler (Keşfet › Sektör)
+export function GoalScreen() {
   const { profile } = useApp()
   const lang = profile.career?.lang ?? profile.activeLang
   return (
     <ContentGate lang={lang}>
-      <CareerInner langParam={langParam} />
+      <GoalInner />
     </ContentGate>
   )
 }
@@ -313,19 +246,18 @@ function GoalForm({ initial, onSave, onCancel }: { initial?: CareerGoal; onSave:
   )
 }
 
-function CareerInner({ langParam }: { langParam?: string | null }) {
+function GoalInner() {
   const { repo, profile, updateProfile, dataVersion } = useApp()
   const [editing, setEditing] = useState(false)
   const goal = profile.career
   const { data: rep } = useAsync(async () => (goal ? computeCareer(repo, goal) : null), [dataVersion, goal])
-  const indLang = langParam ?? goal?.lang ?? profile.activeLang
-  const { data: tracks } = useAsync(() => repo.industryTracks(indLang), [indLang, dataVersion])
   return (
-    <div className="page">
+    <div className="page narrow">
       <div className="page-head">
         <div>
-          <h1>Kariyer</h1>
-          <p>Hedefin, gelişim yolun ve sektör terimleri.</p>
+          <BackLink href="#/profile" label="Profil" />
+          <h1>Hedefim</h1>
+          <p>Kariyer hedefin ve gelişim yolun.</p>
         </div>
       </div>
 
@@ -381,11 +313,27 @@ function CareerInner({ langParam }: { langParam?: string | null }) {
         <p className="muted">Yükleniyor…</p>
       )}
 
-      <h2>Sektör terimleri</h2>
-      <p className="small muted">Önce dili, sonra sektörü seç. Sektör ilerlemen genel seviyenden ayrı tutulur.</p>
+    </div>
+  )
+}
+
+/** Sektör listesi (Keşfet › Sektör): önce dil, sonra sektör */
+export function IndustriesScreen({ langParam }: { langParam?: string | null }) {
+  const { repo, profile, dataVersion } = useApp()
+  const indLang = langParam ?? profile.activeLang
+  const { data: tracks } = useAsync(() => repo.industryTracks(indLang), [indLang, dataVersion])
+  return (
+    <div className="page">
+      <div className="page-head">
+        <div>
+          <BackLink href="#/explore" label="Keşfet" />
+          <h1>Sektör terimleri</h1>
+          <p>Önce dili, sonra sektörü seç. Sektör ilerlemen genel ilerlemenden ayrı tutulur.</p>
+        </div>
+      </div>
       <div className="lang-grid">
         {profile.targetLanguages.map((l) => (
-          <button key={l} className="lang-btn" aria-pressed={l === indLang} onClick={() => go(`#/career?lang=${l}`)}>
+          <button key={l} className="lang-btn" aria-pressed={l === indLang} onClick={() => go(`#/industries?lang=${l}`)}>
             <span className="native">{getLanguage(l).nativeName}</span>
             <span className="small muted">{getLanguage(l).nameTr}</span>
           </button>
@@ -411,7 +359,7 @@ function CareerInner({ langParam }: { langParam?: string | null }) {
   )
 }
 
-/** Bir sektörün dersleri (Kariyer → sektör) */
+/** Bir sektörün dersleri (Keşfet › Sektör › sektör) */
 export function IndustryScreen({ industryId, langParam }: { industryId: string; langParam?: string | null }) {
   const { repo, profile, dataVersion } = useApp()
   const lang = langParam ?? profile.activeLang
@@ -427,9 +375,7 @@ export function IndustryScreen({ industryId, langParam }: { industryId: string; 
     <div className="page">
       <div className="page-head">
         <div>
-          <button className="btn btn-ghost" onClick={() => go(`#/career?lang=${lang}`)}>
-            <Icon.back /> Kariyer
-          </button>
+          <BackLink href={`#/industries?lang=${lang}`} label="Sektörler" />
           <h1>
             {ind.nameTr} · {getLanguage(lang).nameTr}
           </h1>

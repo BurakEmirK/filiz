@@ -95,7 +95,7 @@ export function SoundTestScreen() {
     <div className="page">
       <div className="page-head">
         <div>
-          <button className="btn btn-ghost" onClick={() => go('#/me')}>
+          <button className="btn btn-ghost" onClick={() => go('#/profile/help')}>
             <Icon.back /> Ben
           </button>
           <h1>Ses testi</h1>

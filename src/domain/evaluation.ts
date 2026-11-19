@@ -88,18 +88,32 @@ export function hasPendingAxes(e: Evaluation): boolean {
 export interface ClosedCheck {
   correct: boolean
   nearMiss: boolean
+  /** Cevap, aynı Türkçe anlamı taşıyan BAŞKA bir kelime (birbirinin yerine geçtiği varsayılmaz) */
+  related?: boolean
   matched?: string
   expected: string
   diff?: ReturnType<typeof charDiff>
   explanation: string
 }
 
-/** Tek kelime / kısa ifade yazma kontrolü. Kabul edilen tüm biçimler doğru sayılır. */
-export function checkClosedAnswer(answer: string, accepted: string[], lang: string): ClosedCheck {
+/** Tek kelime / kısa ifade yazma kontrolü. Kabul edilen tüm biçimler doğru sayılır.
+ *  `related`: aynı Türkçe anlamlı başka kelimeler — doğru sayılmaz, ama yazım hatası gibi de gösterilmez. */
+export function checkClosedAnswer(answer: string, accepted: string[], lang: string, related: string[] = []): ClosedCheck {
   const a = normalize(answer, lang)
   const expected = accepted[0]
   const exact = accepted.find((x) => normalize(x, lang) === a)
   if (exact) return { correct: true, nearMiss: false, matched: exact, expected, explanation: 'Doğru.' }
+  const rel = related.find((x) => normalize(x, lang) === a)
+  if (rel) {
+    return {
+      correct: false,
+      nearMiss: false,
+      related: true,
+      matched: rel,
+      expected,
+      explanation: `"${rel}" de benzer bir anlama gelebilir, ama her bağlamda aynı değildir. Burada istenen kelime: ${expected}.`,
+    }
+  }
   if (!a) return { correct: false, nearMiss: false, expected, explanation: 'Cevap boş.' }
   const best = accepted
     .map((x) => ({ x, d: levenshtein(normalize(x, lang), a) }))
@@ -135,6 +149,14 @@ export interface Evaluator {
   readonly name: string
   available(): boolean
   evaluate(req: RemoteEvalRequest): Promise<Evaluation>
+}
+
+/** Değerlendirici durumu: hiç ayarlanmamış (sunucu yok) ile ayarlı ama şu an çevrimdışı birbirinden ayrılır. */
+export type EvaluatorState = 'unconfigured' | 'offline' | 'ready'
+
+export function evaluatorState(endpoint: string, online: boolean): EvaluatorState {
+  if (!endpoint.trim()) return 'unconfigured'
+  return online ? 'ready' : 'offline'
 }
 
 /** Sunucu yapılandırılmadığında kullanılan değerlendirici: hiçbir şeyi değerlendirmez. */

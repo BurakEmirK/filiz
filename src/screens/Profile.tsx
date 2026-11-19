@@ -1,14 +1,17 @@
-import { useRef, useState } from 'react'
+import { useRef, useState, type ReactNode } from 'react'
 import { useApp, useAsync } from '../app/context'
 import { LANGUAGES, getLanguage } from '../content/languages'
 import { getIndustry } from '../content/industries'
 import { content } from '../content/registry'
 import type { Cefr } from '../content/types'
 import type { BackupFile } from '../data/repo'
+import { computeCareer } from '../domain/career'
+import { evaluatorState } from '../domain/evaluation'
 import { computeProgress } from '../domain/services'
 import { SKILL_LABEL, type Profile, type Skill } from '../domain/types'
-import { Card, Chips, Dialog, LangSwitcher, Progress, Seg } from '../ui/components'
+import { BackLink, Card, Chips, Dialog, LangSwitcher, LinkRow, Progress, Seg } from '../ui/components'
 import { Icon } from '../ui/icons'
+import { GoalScreen } from './Tabs'
 
 const LEVELS: (Cefr | 'native')[] = ['native', 'A1', 'A2', 'B1', 'B2', 'C1', 'C2']
 const LEVEL_LABEL = (l: Cefr | 'native') => (l === 'native' ? 'Ana dil' : l)
@@ -32,39 +35,157 @@ export const INTERESTS = [
 
 const toggle = (list: string[], v: string) => (list.includes(v) ? list.filter((x) => x !== v) : [...list, v])
 
-export function MeScreen() {
+export type ProfileSection = 'learning' | 'appearance' | 'backup' | 'help' | 'sources' | 'progress' | 'goal'
+
+/** Profil: kısa açılış ekranı + odaklı alt sayfalar */
+export function ProfileScreen({ section }: { section?: string }) {
   const { profile, updateProfile } = useApp()
+  switch (section as ProfileSection | undefined) {
+    case 'learning':
+      return (
+        <SubPage title="Öğrenme tercihleri">
+          <StudyCard profile={profile} update={updateProfile} />
+          <ProfileCard profile={profile} update={updateProfile} />
+        </SubPage>
+      )
+    case 'appearance':
+      return (
+        <SubPage title="Görünüm ve erişilebilirlik">
+          <AppearanceCard profile={profile} update={updateProfile} />
+        </SubPage>
+      )
+    case 'backup':
+      return (
+        <SubPage title="Yedekleme ve geri yükleme">
+          <DataCard />
+        </SubPage>
+      )
+    case 'help':
+      return (
+        <SubPage title="Yardım">
+          <OtherCard />
+          <EvaluationCard />
+          <ReportsCard />
+          <StatusCard />
+        </SubPage>
+      )
+    case 'sources':
+      return (
+        <SubPage title="Kaynaklar ve lisanslar">
+          <SourcesCard />
+        </SubPage>
+      )
+    case 'progress':
+      return (
+        <SubPage title="Ayrıntılı ilerleme">
+          <ProgressCard />
+        </SubPage>
+      )
+    case 'goal':
+      return <GoalScreen />
+    default:
+      return <ProfileHome />
+  }
+}
+
+function SubPage({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <div className="page">
+    <div className="page narrow">
       <div className="page-head">
         <div>
-          <h1>Ben</h1>
-          <p>İlerleme, profil ve ayarlar.</p>
+          <BackLink href="#/profile" label="Profil" />
+          <h1>{title}</h1>
         </div>
       </div>
-      <ProgressCard />
-      <div className="grid-2">
-        <ProfileCard profile={profile} update={updateProfile} />
-        <StudyCard profile={profile} update={updateProfile} />
-        <AppearanceCard profile={profile} update={updateProfile} />
-        <EvaluationCard />
-        <DataCard />
-        <SourcesCard />
-        <StatusCard />
-      </div>
-      <OtherCard />
+      {children}
     </div>
   )
 }
 
-/** Ses testi ve Demo Modu: sık kullanılmayan araçlar en altta tek satır */
+function ProfileHome() {
+  const { repo, profile, updateProfile, dataVersion } = useApp()
+  const lang = profile.activeLang
+  const { data } = useAsync(async () => {
+    await content.ensureLanguage(lang).catch(() => undefined)
+    const p = await computeProgress(repo, lang)
+    const career = profile.career ? await computeCareer(repo, profile.career) : null
+    return { p, career }
+  }, [lang, dataVersion, profile.career])
+  const name = getLanguage(lang).nameTr
+  return (
+    <div className="page narrow profile">
+      <div className="page-head">
+        <div>
+          <h1>Profil</h1>
+        </div>
+      </div>
+
+      <section className="card">
+        <h2>Öğrendiğin diller</h2>
+        <div className="row" role="group" aria-label="Etkin dil">
+          {profile.targetLanguages.map((l) => (
+            <button key={l} type="button" className="chip" aria-pressed={l === lang} onClick={() => void updateProfile({ activeLang: l })}>
+              {getLanguage(l).nameTr}
+            </button>
+          ))}
+        </div>
+        <p className="tiny muted">Seçili dil Bugün ve Keşfet'te kullanılır. Her dilin kayıtları ayrı tutulur.</p>
+      </section>
+
+      <section className="card">
+        <h2>{name} ilerlemen</h2>
+        {data ? (
+          <>
+            <p>
+              {data.p.core.introduced} kelimeyle tanıştın. Son 7 günde {data.p.reviews7d} tekrar yaptın
+              {data.p.accuracy7d !== null ? `; hatırlama oranın %${Math.round(data.p.accuracy7d * 100)}` : ''}.
+            </p>
+            <a className="small" href="#/profile/progress">Ayrıntılı ilerleme</a>
+          </>
+        ) : (
+          <p className="muted">Yükleniyor…</p>
+        )}
+      </section>
+
+      <section className="card">
+        <h2>Hedefin</h2>
+        {profile.career && data?.career ? (
+          <>
+            <p>{profile.career.title}</p>
+            <Progress value={data.career.overall} label="Hedef ilerlemesi" />
+            <p className="small muted">
+              %{Math.round(data.career.overall * 100)} tamam
+              {data.career.projectedDate ? `. Bu hızla tahmini bitiş: ${data.career.projectedDate}` : ''}.
+            </p>
+            <a className="small" href="#/profile/goal">Yol haritasını gör</a>
+          </>
+        ) : (
+          <>
+            <p className="small muted">Bir hedef koyarsan uygulama sana adım adım bir yol haritası çıkarır.</p>
+            <a className="btn btn-soft" href="#/profile/goal">Hedef belirle</a>
+          </>
+        )}
+      </section>
+
+      <nav className="rows" aria-label="Ayarlar">
+        <LinkRow href="#/profile/learning" title="Öğrenme tercihleri" detail={`Günde ${profile.dailyMinutes} dk, ${profile.newPerDay} yeni kelime; diller ve hedefler`} />
+        <LinkRow href="#/profile/appearance" title="Görünüm ve erişilebilirlik" detail="Tema, metin boyutu, hareket" />
+        <LinkRow href="#/profile/backup" title="Yedekleme ve geri yükleme" detail="Verilerini dosyaya al, başka cihaza aktar" />
+        <LinkRow href="#/profile/help" title="Yardım" detail="Ses testi, Demo Modu, içerik bildirimlerin" />
+        <LinkRow href="#/profile/sources" title="Kaynaklar ve lisanslar" />
+      </nav>
+    </div>
+  )
+}
+
+/** Ses testi ve Demo Modu */
 function OtherCard() {
   const { startDemo } = useApp()
   const [demoOpen, setDemoOpen] = useState(false)
   return (
     <Card title="Araçlar">
       <div className="list">
-        <a className="list-item" href="#/sound-test" style={{ textDecoration: 'none', color: 'inherit' }}>
+        <a className="list-item" href="#/sound-test?from=help" style={{ textDecoration: 'none', color: 'inherit' }}>
           <span className="grow">
             <b>Ses testi</b>
             <div className="tiny muted">Telefonunda hangi dillerde ses çalıştığını kontrol et, raporu kopyala.</div>
@@ -127,7 +248,7 @@ function SourcesCard() {
           </ul>
         </div>
       ) : (
-        <p className="small muted">Bu dilin kelime paketi henüz yüklenmedi (dili seçip Öğren'i açınca yüklenir).</p>
+        <p className="small muted">Bu dilin kelime paketi henüz yüklenmedi (dili seçip Bugün'ü açınca yüklenir).</p>
       )}
       <ul className="tiny muted" style={{ margin: 0, paddingLeft: 18 }}>
         <li>Kelime sıklığı: wordfreq (R. Speer ve ark.) — CC BY-SA 4.0</li>
@@ -181,7 +302,7 @@ function ProgressCard() {
               ))}
             </tbody>
           </table>
-          <p className="tiny muted">"Kendiliğinden üretme" çevrimiçi değerlendirme bağlanınca (sonraki aşama) izlenmeye başlayacak. "Güçlü" = tahmini hafıza kararlılığı 21 günün üstünde; bir sertifika veya resmî seviye değildir.</p>
+          <p className="tiny muted">"Kendiliğinden üretme" şu an izlenmiyor (cümle değerlendirme bağlı değil). "Güçlü" = tahmini hafıza kararlılığı 21 günün üstünde; bir sertifika veya resmî seviye değildir.</p>
           <h3>Sektörler (genel ilerlemeden ayrı)</h3>
           {p.industries.filter((i) => i.total > 0).map((i) => (
             <div key={i.industryId} className="stack" style={{ gap: 6 }}>
@@ -212,7 +333,7 @@ function ProfileCard({ profile, update }: { profile: Profile; update: (p: Partia
     void update({ knownLanguages: level ? [...rest, { lang, level }] : rest })
   }
   return (
-    <Card title="Profil">
+    <Card title="Diller ve hedefler">
       <div className="field">
         <span className="label">Öğrendiğin diller (her biri ayrı izlenir)</span>
         <Chips
@@ -273,59 +394,41 @@ function ProfileCard({ profile, update }: { profile: Profile; update: (p: Partia
 
 function StudyCard({ profile, update }: { profile: Profile; update: (p: Partial<Profile>) => Promise<void> }) {
   return (
-    <Card title="Çalışma ayarları">
+    <Card title="Günlük çalışma">
       <div className="field">
         <label htmlFor="mins">Günlük süre: {profile.dailyMinutes} dk</label>
         <input id="mins" className="range" type="range" min={5} max={60} step={5} value={profile.dailyMinutes} onChange={(e) => update({ dailyMinutes: Number(e.target.value) })} />
       </div>
       <div className="field">
-        <label htmlFor="newper">Günlük yeni öğe: {profile.newPerDay}</label>
+        <label htmlFor="newper">Günlük yeni kelime: {profile.newPerDay}</label>
         <input id="newper" className="range" type="range" min={1} max={20} step={1} value={profile.newPerDay} onChange={(e) => update({ newPerDay: Number(e.target.value) })} />
-        <p className="tiny muted">1 = yalnızca Günün Kelimesi. Tekrar yükü artınca uygulama bu sayıyı geçici olarak düşürür. Varsayılanlar (15 dk, 5 öğe) tasarım tercihidir, bilimsel bir kural değildir.</p>
+        <p className="tiny muted">Bugün ilk kez tanıştığın kelimeler sayılır; aynı kelime iki kez sayılmaz. Tekrar yükü artınca uygulama bu sayıyı geçici olarak düşürür. Hedef dolunca Bugün ekranında "Biraz daha çalış" ile devam edebilirsin. Varsayılanlar (15 dk, 5 kelime) tasarım tercihidir, bilimsel bir kural değildir.</p>
       </div>
-      <div className="field">
+      <details className="details">
+        <summary>Gelişmiş: tekrar planlayıcı</summary>
+      <div className="field details-body">
         <span className="label">Hedef hatırlama oranı</span>
         <Seg label="Hedef hatırlama oranı" value={String(profile.desiredRetention)} onChange={(v) => update({ desiredRetention: Number(v) })} options={[{ value: '0.85', label: '%85' }, { value: '0.9', label: '%90' }, { value: '0.95', label: '%95' }]} />
-        <p className="tiny muted">Tekrar planlayıcı (FSRS) bu orana göre aralık seçer. Yükseltirsen daha sık tekrar yaparsın. Planlayıcının varsayılanları genel kullanıcı verisinden gelir; senin için kişiselleştirme ilerideki bir aşamadır.</p>
+        <p className="tiny muted">Tekrar planlayıcı (FSRS) bu orana göre aralık seçer. Yükseltirsen daha sık tekrar yaparsın. Planlayıcının varsayılanları genel kullanıcı verisinden gelir. Emin değilsen %90'da bırak.</p>
       </div>
+      </details>
       {['ru', 'hu'].filter((l) => profile.targetLanguages.includes(l)).map((l) => (
         <div className="field" key={l}>
           <span className="label">{getLanguage(l).nameTr} telaffuz yardımı</span>
           <Seg label={`${getLanguage(l).nameTr} telaffuz yardımı`} value={profile.pronunciationAid[l] ?? 'full'} onChange={(v) => update({ pronunciationAid: { ...profile.pronunciationAid, [l]: v } })} options={[{ value: 'full', label: 'Tam' }, { value: 'stress', label: l === 'ru' ? 'Yalnız vurgu' : 'Az' }, { value: 'none', label: 'Kapalı' }]} />
         </div>
       ))}
-      {profile.targetLanguages.includes('hu') ? <HungarianLetters /> : null}
     </Card>
-  )
-}
-
-function HungarianLetters() {
-  const [open, setOpen] = useState(false)
-  const notes = getLanguage('hu').letterNotes ?? []
-  return (
-    <div>
-      <button className="btn btn-ghost" onClick={() => setOpen(!open)}>{open ? 'Macarca harf notlarını gizle' : 'Macarca harf notları (Türkçe konuşanlar için)'}</button>
-      {open ? (
-        <div className="list small">
-          {notes.map((n) => (
-            <div className="list-item" key={n.letters}>
-              <b style={{ minWidth: 90 }} lang="hu">{n.letters}</b>
-              <span>{n.note}</span>
-            </div>
-          ))}
-        </div>
-      ) : null}
-    </div>
   )
 }
 
 function AppearanceCard({ profile, update }: { profile: Profile; update: (p: Partial<Profile>) => Promise<void> }) {
   return (
-    <Card title="Görünüm ve erişilebilirlik">
+    <Card>
       <div className="field">
         <span className="label">Tema</span>
-        <Seg label="Tema" value={profile.theme} onChange={(v) => update({ theme: v })} options={[{ value: 'kum', label: 'Kum' }, { value: 'adacayi', label: 'Adaçayı' }, { value: 'sis', label: 'Sis' }, { value: 'oyun', label: 'Oyun' }]} />
-        <p className="tiny muted">"Oyun" teması çocuklar için daha canlı ve yuvarlak bir görünümdür.</p>
+        <Seg label="Tema" value={profile.theme} onChange={(v) => update({ theme: v })} options={[{ value: 'civit', label: 'Çivit' }, { value: 'kum', label: 'Kum' }, { value: 'adacayi', label: 'Adaçayı' }, { value: 'sis', label: 'Sis' }, { value: 'oyun', label: 'Oyun' }]} />
+        <p className="tiny muted">Çivit yeni varsayılan temadır. "Oyun" çocuklar için daha canlı ve yuvarlak bir görünümdür.</p>
       </div>
       <div className="field">
         <span className="label">Açık / koyu</span>
@@ -345,23 +448,92 @@ function AppearanceCard({ profile, update }: { profile: Profile; update: (p: Par
 }
 
 function EvaluationCard() {
-  const { repo, dataVersion } = useApp()
-  const { data: pending } = useAsync(() => repo.pendingAttempts(), [dataVersion])
+  const { repo, profile, dataVersion } = useApp()
+  const state = evaluatorState(profile.evaluationEndpoint, navigator.onLine)
+  const { data } = useAsync(async () => {
+    const all = await repo.db.attempts.toArray()
+    const sentences = all.filter((a) => a.exerciseType === 'free-sentence' || a.exerciseType === 'task')
+    return { saved: sentences.length, pending: sentences.filter((a) => a.evalStatus === 'pending').length }
+  }, [dataVersion])
   return (
     <Card title="Cümle değerlendirme">
-      <p><span className="pill info">Entegrasyon bekliyor</span></p>
-      <p className="small">
-        Şu an cihaz yalnızca basit kontrolleri yapar (hedef kelime geçiyor mu, kapalı cevaplar). Dilbilgisi, görev anlamı ve doğallık kontrolü için
-        çevrimiçi değerlendirme sonraki aşamada bağlanacak. O zamana kadar cümlelerin "bekliyor" olarak saklanır.
+      {state === 'unconfigured' ? (
+        <>
+          <p><span className="pill">Bağlı değil</span></p>
+          <p className="small">
+            Şu an cümleleri değerlendiren bir hizmet yok. Yazdığın cümleler pratik olarak kaydedilir; cihaz yalnızca hedef kelimenin geçip
+            geçmediğine bakar. Dilbilgisi ve doğallık kontrol edilmez.
+          </p>
+        </>
+      ) : state === 'offline' ? (
+        <>
+          <p><span className="pill warn">Ayarlı, şu an çevrimdışı</span></p>
+          <p className="small">Cümlelerin kaydedilir ve bağlantı gelince değerlendirilir.</p>
+        </>
+      ) : (
+        <p><span className="pill good">Ayarlı ve çevrimiçi</span></p>
+      )}
+      {data ? (
+        <p className="small muted">
+          Kayıtlı pratik cümlesi: {data.saved}.
+          {data.pending ? ` Bunlardan ${data.pending} tanesi "bekliyor" olarak işaretli; bir değerlendirici bağlanırsa değerlendirilebilir.` : ''}
+        </p>
+      ) : null}
+    </Card>
+  )
+}
+
+const ISSUE_LABEL = { meaning: 'Anlam yanlış', translation: 'Çeviri yanlış', example: 'Örnek uygun değil', audio: 'Ses yanlış', other: 'Başka' } as const
+
+/** İçerik bildirimleri: yalnızca bu cihazda; kopyalanıp geliştiriciye iletilebilir */
+function ReportsCard() {
+  const { repo, dataVersion, bump } = useApp()
+  const { data: reports } = useAsync(() => repo.reports(), [dataVersion])
+  const [copied, setCopied] = useState(false)
+  const text = (reports ?? [])
+    .map((r) => `${new Date(r.createdAt).toISOString().slice(0, 10)} | ${r.lang} | ${r.word} | ${ISSUE_LABEL[r.issue]} | ${r.context}${r.senseId ? ` | ${r.senseId}` : ''}${r.note ? ` | ${r.note}` : ''}`)
+    .join('\n')
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(text)
+      setCopied(true)
+    } catch {
+      setCopied(false)
+    }
+  }
+  return (
+    <Card title="İçerik bildirimlerim">
+      <p className="small muted">
+        Kelime kartlarındaki "Bu içerikte sorun var" ile yaptığın bildirimler. Yalnızca bu cihazda saklanır, hiçbir yere gönderilmez; yedeğe
+        dahildir.
       </p>
-      <p className="small">Bekleyen cümle: <b>{pending?.length ?? 0}</b></p>
-      <p className="tiny muted">Çevrimiçi değerlendirme açıldığında, yalnızca değerlendirilecek cümle ve görev bilgisi sunucuna gönderilecek; bu her seferinde açıkça belirtilecek.</p>
+      {reports?.length ? (
+        <>
+          <div className="list small">
+            {reports.map((r) => (
+              <div className="list-item" key={r.id}>
+                <span className="grow">
+                  <b lang={r.lang}>{r.word}</b> <span className="muted">{ISSUE_LABEL[r.issue]}, {r.context}</span>
+                  {r.note ? <div className="muted">{r.note}</div> : null}
+                </span>
+                <button className="btn btn-ghost btn-icon" aria-label={`${r.word} bildirimini sil`} onClick={() => void repo.deleteReport(r.id).then(bump)}>
+                  <Icon.trash />
+                </button>
+              </div>
+            ))}
+          </div>
+          <button className="btn" onClick={() => void copy()}>{copied ? 'Kopyalandı' : 'Listeyi kopyala'}</button>
+          {!copied ? null : <p className="tiny muted">Kopyaladığın listeyi bir mesaja yapıştırıp iletebilirsin.</p>}
+        </>
+      ) : (
+        <p className="small">Henüz bildirim yok.</p>
+      )}
     </Card>
   )
 }
 
 function DataCard() {
-  const { repo, bump } = useApp()
+  const { repo, reloadProfile } = useApp()
   const fileRef = useRef<HTMLInputElement>(null)
   const [msg, setMsg] = useState<string | null>(null)
   const exportData = async () => {
@@ -378,17 +550,17 @@ function DataCard() {
     try {
       const parsed = JSON.parse(await file.text()) as BackupFile
       const r = await repo.importAll(parsed)
-      setMsg(`İçe aktarıldı: ${r.added} yeni, ${r.updated} güncellenen, ${r.skipped} zaten güncel kayıt. Hiçbir kayıt çoğaltılmadı.`)
-      bump()
+      await reloadProfile()
+      setMsg(`İçe aktarıldı: ${r.added} yeni, ${r.updated} güncellenen, ${r.skipped} zaten güncel kayıt. Hiçbir kayıt çoğaltılmadı. Profilin ve ekranlar yenilendi.`)
     } catch (e) {
       setMsg(`İçe aktarılamadı: ${(e as Error).message}`)
     }
   }
   return (
-    <Card title="Verilerin">
+    <Card>
       <p className="small">
         İlerlemen bu cihazda saklanır ve internetsiz çalışır. iOS nadiren web uygulaması verisini silebilir; düzenli yedek almanı öneririm. iPhone–iPad
-        otomatik senkronu sonraki aşamada gelecek; şimdilik yedeği bir cihazdan alıp diğerine aktarabilirsin (kayıtlar birleştirilir, çoğalmaz).
+        otomatik senkronu yok; yedeği bir cihazdan alıp diğerine aktarabilirsin (kayıtlar birleştirilir, çoğalmaz).
       </p>
       <div className="row">
         <button className="btn" onClick={exportData}><Icon.download /> Yedek al</button>
@@ -407,7 +579,7 @@ const STATUS: { label: string; state: 'Çalışıyor' | 'Örnek içerik' | 'Ente
   { label: 'Kariyer hedefi ve yol haritası', state: 'Çalışıyor' },
   { label: 'Tekstil terimleri (İngilizce, Rusça)', state: 'Örnek içerik' },
   { label: 'Finans, BT, Mühendislik, Mimarlık terimleri', state: 'Sonraki aşama' },
-  { label: 'Cümle değerlendirme (dilbilgisi, anlam, doğallık)', state: 'Entegrasyon bekliyor' },
+  { label: 'Cümle değerlendirme (dilbilgisi, anlam, doğallık)', state: 'Sonraki aşama' },
   { label: 'Demo Modu (veri izolasyonu)', state: 'Çalışıyor' },
   { label: 'İnsan sesi kayıtları ve cihaz sesi (iPhone)', state: 'Test edilmedi' },
   { label: 'El yazısı (Scribble) ve Pencil ile harf yazma (iPad)', state: 'Test edilmedi' },
@@ -418,7 +590,8 @@ const STATUS: { label: string; state: 'Çalışıyor' | 'Örnek içerik' | 'Ente
 
 function StatusCard() {
   return (
-    <Card title="Özellik durumu">
+    <details className="details card">
+      <summary>Özellik durumu (geliştirme notları)</summary>
       <div className="list small">
         {STATUS.map((s) => (
           <div className="list-item" key={s.label}>
@@ -427,7 +600,7 @@ function StatusCard() {
           </div>
         ))}
       </div>
-      <p className="tiny muted">İçeriklerin tamamı yapay zekâ taslağıdır ve uzman doğrulamasından geçmemiştir. Görseller bu proje için çizilmiş basit özgün illüstrasyonlardır.</p>
-    </Card>
+      <p className="tiny muted">İçerikler yapay zekâ taslağı veya açık veriden otomatik işlenmiştir ve uzman doğrulamasından geçmemiştir. Görseller bu proje için çizilmiş basit özgün illüstrasyonlardır.</p>
+    </details>
   )
 }

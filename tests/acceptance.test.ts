@@ -215,7 +215,7 @@ describe('Kabul 7 — Tanınan el yazısı değerlendirmeden önce düzeltilebil
     expect(answer.recognitionEdited).toBe(true)
     const repo = freshRepo()
     const attempt = await submitProduction(repo, {
-      lang: 'en', senses: [content.sense('en-tx-cotton')], mode: 'free', prompt: 'p', answer, hintsUsed: 0, context: 'industry', industryId: 'textile',
+      lang: 'en', senses: [content.sense('en-tx-cotton')], mode: 'free', prompt: 'p', answer, hintsUsed: 0, context: 'industry', industryId: 'textile', evaluator: 'offline',
     })
     expect(attempt.finalText).toBe('The shirt is made of cotton.')
     expect(attempt.recognizedText).toBe('The shirt is made of co+ton.')
@@ -228,7 +228,7 @@ describe('Kabul 8 — Çevrimdışı kullanım ve sonradan birleştirme veriyi k
   it('çevrimdışıyken cevap "bekliyor" kalır; sahte başarı gösterilmez; bağlantı gelince tamamlanır', async () => {
     const repo = freshRepo()
     const answer = prepareAnswer({ inputMode: 'keyboard', text: 'We apologise for the delay.' })
-    const a = await submitProduction(repo, { lang: 'en', senses: [content.sense('en-tx-delay')], mode: 'free', prompt: 'p', answer, hintsUsed: 0, context: 'industry' })
+    const a = await submitProduction(repo, { lang: 'en', senses: [content.sense('en-tx-delay')], mode: 'free', prompt: 'p', answer, hintsUsed: 0, context: 'industry', evaluator: 'offline' })
     expect(a.evalStatus).toBe('pending')
     let online = false
     const fake: Evaluator = {

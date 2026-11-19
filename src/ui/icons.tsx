@@ -28,6 +28,9 @@ export const Icon = {
   download: () => <I><path d="M12 4v11M7 10l5 5 5-5M5 20h14" /></I>,
   upload: () => <I><path d="M12 20V9M7 14l5-5 5 5M5 4h14" /></I>,
   users: () => <I><circle cx="9" cy="8" r="3.5" /><path d="M2.5 20c1-3.5 3.5-5 6.5-5s5.5 1.5 6.5 5" /><circle cx="17" cy="9" r="2.5" /><path d="M17 14c2.3 0 4 1.2 4.7 3.5" /></I>,
+  chevron: () => <I><path d="M9 5l7 7-7 7" /></I>,
+  flag: () => <I><path d="M5 21V4M5 4h11l-2 4 2 4H5" /></I>,
+  explore: () => <I><circle cx="12" cy="12" r="9" /><path d="M15.5 8.5l-2 5-5 2 2-5z" /></I>,
   trash: () => <I><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3" /></I>,
 }
 
