@@ -43,6 +43,11 @@ describe('Kelime havuzu: dil başına en az 3000 sık kelime (açık veri)', () 
     })
   }
 
+  it('es: İspanyolca Vikisözlük ile insan sesi kapsamı en az %15', () => {
+    const { words } = load('es')
+    expect(words.filter((w) => w.a).length / words.length).toBeGreaterThan(0.15)
+  })
+
   it('en sık kelimeler gerçekten sık: bilinen temel kelimeler ilk 100 içinde', () => {
     const top = (lang: string) => new Set(load(lang).words.slice(0, 100).map((w) => w.w.toLocaleLowerCase(lang)))
     expect(top('ru')).toContain('в')

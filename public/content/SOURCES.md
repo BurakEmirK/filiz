@@ -10,6 +10,7 @@ otomatik üretilmiştir. Üretilen paketler **CC BY-SA 4.0** lisanslıdır. Uzma
 | Türkçe anlamlar | Türkçe Vikisözlük (Wiktextract), İngilizce Vikisözlük çeviri tabloları; bulunamayanlarda [Argos Translate](https://www.argosopentech.com/) İngilizce→Türkçe modeli ile makine çevirisi | CC BY-SA 4.0; Argos modeli açık kaynak |
 | Örnek cümleler ve insan çevirileri | [Tatoeba](https://tatoeba.org/) (14 Kasım 2026 dışa aktarımı) | CC BY 2.0 FR (bazı cümleler CC0) |
 | Ses kayıtları | [Wikimedia Commons](https://commons.wikimedia.org/) (çoğu [Lingua Libre](https://lingualibre.org/)); dosya adresleri pakette, dosyalar Wikimedia'dan çalınır | Dosya bazında (çoğunlukla CC BY-SA); her dosyanın lisansı kendi sayfasında |
+| İspanyolca ses dosyası adresleri (İngilizce Vikisözlük'te olmayanlar) | İspanyolca Vikisözlük — [kaikki.org/eswiktionary](https://kaikki.org/eswiktionary/) (Kasım 2026 dökümü), `scripts/content/add_audio.py` ile eklendi; birden çok kayıt varsa İspanya etiketli olan seçilir | CC BY-SA 4.0 / GFDL (ses dosyaları: dosya bazında) |
 | Emoji eşleşmesi | [emojibase-data](https://emojibase.dev/) (Unicode CLDR adları) | MIT |
 
 Her kelimedeki Türkçe anlamın kaynağı `m[].ts` alanında, örnek cümlenin kaynağı `x.src` alanında (`tatoeba:<id>`)

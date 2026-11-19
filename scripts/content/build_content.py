@@ -241,6 +241,40 @@ def scan_trwiktionary():
     return tr, audio
 
 
+# ---------------------------------------------------------------- 3b. Dilin kendi Vikisözlüğündeki ses kayıtları
+# İngilizce Vikisözlük'te kaydı az olan diller için (ör. İspanyolca: kaikki.org/eswiktionary).
+EXTRA_AUDIO = {'es': RAW / 'eswikt' / 'es-wikt.jsonl.gz'}
+
+
+def pick_audio(sounds):
+    """Kayıtlar arasından seçim: önce İspanya etiketli, sonra etiketsiz, sonra diğerleri (yalnızca mp3'ü olanlar)."""
+    def rank(s):
+        tags = (s.get('tags') or []) + (s.get('raw_tags') or [])
+        return 0 if 'Spain' in tags else 1 if not tags else 2
+    cands = [s for s in sounds or [] if s.get('mp3_url')]
+    if not cands:
+        return None
+    best = min(cands, key=rank)  # min, eşitlikte ilk geleni korur
+    return {'u': best['mp3_url'], 'f': best.get('audio') or ''}
+
+
+def scan_wikt_audio(path, lang):
+    """Bir Vikisözlük dökümünden (Wiktextract) `lang` dilindeki kelimelerin ses kayıtları: kelime → {'u', 'f'}."""
+    found = defaultdict(list)
+    needle = f'"lang_code": "{lang}"'
+    with gzip.open(path, 'rt', encoding='utf-8') as fh:
+        for line in fh:
+            if needle not in line or 'mp3_url' not in line:
+                continue
+            o = json.loads(line)
+            if o.get('lang_code') != lang:
+                continue
+            found[norm(o.get('word') or '', lang)] += o.get('sounds') or []
+    out = {k: a for k, v in found.items() if (a := pick_audio(v))}
+    log(f'{lang} vikisözlük ses kayıtları: {len(out):,} kelime')
+    return out
+
+
 # ---------------------------------------------------------------- 4. Sıralama
 def rank_lemmas(lang, surfaces, lemma_entries, formmap):
     surf = surfaces[lang]
@@ -490,6 +524,7 @@ def main():
     surfaces = load_frequencies()
     lemma_entries, formmap, en_tr = scan_enwiktionary(surfaces)
     trw, trw_audio = scan_trwiktionary()
+    extra_audio = {l: scan_wikt_audio(p, l) for l, p in EXTRA_AUDIO.items() if p.exists()}
     mt = MT()
     emoji = load_emoji()
     summary = {}
@@ -574,7 +609,7 @@ def main():
             forms = [f for f in dict.fromkeys(forms) if f != lem]
             seen = [f for f in forms if f in surfaces[lang]]
             forms = (seen + [f for f in forms if f not in surfaces[lang]])[:40]
-            audio = next((a for r in recs for a in r['au']), None) or trw_audio.get((lang, lem))
+            audio = next((a for r in recs for a in r['au']), None) or trw_audio.get((lang, lem)) or extra_audio.get(lang, {}).get(lem)
             ipa = next((r['ipa'] for r in recs if r['ipa']), None)
             ex = examples.get(lem)
             if not ex:
