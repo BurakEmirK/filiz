@@ -89,6 +89,12 @@ function useListenMode(sense: Sense, mode: 'audio' | 'text') {
       </button>
       <p className="tiny muted" style={{ textAlign: 'center' }}>
         {sense.audio ? 'İnsan sesi kaydı' : 'Cihaz sesi (sentetik)'} · Dinlemek için dokun
+        {sense.audio ? null : (
+          <>
+            <br />
+            Duymuyorsan sessiz modu kapatmayı dene.
+          </>
+        )}
       </p>
       {!audioOk ? (
         <div className="notice warn">

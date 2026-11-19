@@ -65,8 +65,10 @@ export function StatusPill({ status }: { status: AxisStatus }) {
 }
 
 /** Ses düğmesi: her zaman görünür. Önce insan kaydı, yoksa cihaz sesi. Çalmazsa bunu açıkça söyler. */
+let ttsHintShown = false
+
 export function AudioButton({ text, lang, recording, label = 'Dinle', big = false }: { text: string; lang: string; recording?: string; label?: string; big?: boolean }) {
-  const [state, setState] = useState<'idle' | 'fail' | 'synthetic'>('idle')
+  const [state, setState] = useState<'idle' | 'fail' | 'synthetic' | 'hint'>('idle')
   // Kayıt verilmediyse kelimenin kaydı aranır; dokunma anında yeniden bakılır (paket sonradan yüklenmiş olabilir)
   const findRecording = () => recording ?? content.wordSense(lang, text)?.audio?.url
   useEffect(() => {
@@ -74,11 +76,16 @@ export function AudioButton({ text, lang, recording, label = 'Dinle', big = fals
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [recording, lang, text])
   const onClick = () => {
-    play({ text, lang, recording: findRecording() }).then((o) => setState(o === 'failed' ? 'fail' : o === 'tts-no-voice' ? 'synthetic' : 'idle'))
+    play({ text, lang, recording: findRecording() }).then((o) => {
+      // Cihaz sesi sessiz modda duyulmayabilir: oturumda ilk kez cihaz sesi çalınca bir kez hatırlat
+      const hint = o === 'tts' && !ttsHintShown
+      if (hint) ttsHintShown = true
+      setState(o === 'failed' ? 'fail' : o === 'tts-no-voice' ? 'synthetic' : hint ? 'hint' : 'idle')
+    })
   }
   return (
     <span className="audio-wrap">
-      <button type="button" className={big ? 'big-audio' : 'btn btn-soft btn-icon'} onClick={onClick} aria-label={`${label} (${recording ? 'insan sesi kaydı' : 'cihaz sesi'})`}>
+      <button type="button" className={big ? 'big-audio' : 'btn btn-soft btn-icon'} onClick={onClick} aria-label={`${label} (${findRecording() ? 'insan sesi kaydı' : 'cihaz sesi'})`}>
         <Icon.play />
       </button>
       {state === 'fail' ? (
@@ -87,6 +94,7 @@ export function AudioButton({ text, lang, recording, label = 'Dinle', big = fals
         </a>
       ) : null}
       {state === 'synthetic' ? <span className="tiny muted">Bu dilde cihaz sesi bulunamadı</span> : null}
+      {state === 'hint' ? <span className="tiny muted">Duymuyorsan sessiz modu kapatmayı dene.</span> : null}
     </span>
   )
 }

@@ -44,20 +44,29 @@ export function SoundTestScreen() {
   const recordingFor = (lang: string) => sampleFor(lang).recording
   const { profile } = useApp()
   const [, setLoadedTick] = useState(0)
+  const [loadingPack, setLoadingPack] = useState<Record<string, boolean>>({})
+  const loadPack = (code: string) => {
+    setLoadingPack((m) => ({ ...m, [code]: true }))
+    return content
+      .ensureLanguage(code)
+      .then(() => preloadRecording(recordingFor(code)))
+      .catch(() => undefined)
+      .finally(() => {
+        setLoadingPack((m) => ({ ...m, [code]: false }))
+        setLoadedTick((t) => t + 1)
+      })
+  }
   useEffect(() => {
-    // Yalnızca öğrendiğin dillerin kelime paketi yüklenir (gereksiz veri indirmemek için)
-    for (const code of profile.targetLanguages)
-      void content
-        .ensureLanguage(code)
-        .then(() => preloadRecording(recordingFor(code)))
-        .then(() => setLoadedTick((t) => t + 1))
-        .catch(() => undefined)
+    // Öğrendiğin dillerin paketi kendiliğinden yüklenir; diğerleri "Paketi yükle" ile (gereksiz veri indirmemek için)
+    for (const code of profile.targetLanguages) void loadPack(code)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [profile.targetLanguages])
+  const recordingStatus = (code: string) => (!content.isLoaded(code) ? 'paket yüklenmedi' : recordingFor(code) ? 'var' : 'yok')
 
   const run = (key: string, p: Promise<PlayOutcome>) => {
     setResults((r) => ({ ...r, [key]: 'deneniyor…' }))
-    p.then((o) => setResults((r) => ({ ...r, [key]: OUTCOME_TR[o] })))
+    // Kayıt hangi yolla çaldı: "anında" (kısa efekt sesi) ya da "oynatıcı" (medya)
+    p.then((o) => setResults((r) => ({ ...r, [key]: OUTCOME_TR[o] + (o === 'recording' && audioLog[0]?.detail ? ` (${audioLog[0].detail})` : '') })))
   }
 
   const report = [
@@ -67,7 +76,7 @@ export function SoundTestScreen() {
     `Konuşma sentezi: ${supported ? 'var' : 'yok'} · ses sayısı: ${voices?.length ?? '?'}`,
     ...LANGUAGES.map((l) => {
       const v = voiceFor(l.code)
-      return `${l.code}: cihaz sesi ${v ? `${v.name} (${v.lang})` : 'yok'} · insan kaydı ${recordingFor(l.code) ? 'var' : 'yok'} · test: ${results[`tts-${l.code}`] ?? '-'} / ${results[`rec-${l.code}`] ?? '-'}`
+      return `${l.code}: cihaz sesi ${v ? `${v.name} (${v.lang})` : 'yok'} · insan kaydı ${recordingStatus(l.code)} · test: ${results[`tts-${l.code}`] ?? '-'} / ${results[`rec-${l.code}`] ?? '-'}`
     }),
     'Son çalma denemeleri:',
     ...audioLog.slice(0, 10).map((e) => `  ${new Date(e.at).toLocaleTimeString()} ${e.lang} "${e.text}" → ${e.outcome}${e.detail ? ` (${e.detail})` : ''}`),
@@ -107,15 +116,22 @@ export function SoundTestScreen() {
                 <span className="grow">
                   <b>{l.nameTr}</b> <span className="muted small">· cihaz sesi: {v ? `${v.name}` : voices ? 'bulunamadı' : '…'}</span>
                   <div className="tiny muted">
-                    {results[`tts-${l.code}`] ? `Cihaz sesi: ${results[`tts-${l.code}`]}` : ''} {results[`rec-${l.code}`] ? ` · Kayıt: ${results[`rec-${l.code}`]}` : ''}
+                    {content.isLoaded(l.code) ? (rec ? '' : 'Bu dilin paketinde örnek kayıt yok') : 'Kelime paketi yüklenmedi'}
+                    {results[`tts-${l.code}`] ? ` Cihaz sesi: ${results[`tts-${l.code}`]}` : ''} {results[`rec-${l.code}`] ? ` · Kayıt: ${results[`rec-${l.code}`]}` : ''}
                   </div>
                 </span>
                 <button className="btn btn-soft" onClick={() => run(`tts-${l.code}`, speakTTS(SAMPLE[l.code], l.code))}>
                   Cihaz sesi
                 </button>
-                <button className="btn btn-soft" disabled={!rec} onClick={() => run(`rec-${l.code}`, play({ text: sampleFor(l.code).text, lang: l.code, recording: rec }))}>
-                  İnsan kaydı
-                </button>
+                {content.isLoaded(l.code) ? (
+                  <button className="btn btn-soft" disabled={!rec} onClick={() => run(`rec-${l.code}`, play({ text: sampleFor(l.code).text, lang: l.code, recording: rec }))}>
+                    İnsan kaydı
+                  </button>
+                ) : (
+                  <button className="btn btn-soft" disabled={loadingPack[l.code]} onClick={() => void loadPack(l.code)}>
+                    {loadingPack[l.code] ? 'Yükleniyor…' : 'Paketi yükle'}
+                  </button>
+                )}
               </div>
             )
           })}
@@ -123,9 +139,10 @@ export function SoundTestScreen() {
       </Card>
       <Card title="Ses çıkmıyorsa">
         <ul className="small" style={{ margin: 0, paddingLeft: 18 }}>
-          <li>Telefonun sessiz modda olmadığından ve ses seviyesinin açık olduğundan emin ol.</li>
+          <li>Ses seviyesinin açık olduğundan emin ol.</li>
+          <li>İnsan kayıtları sessiz modda da çalar. Cihaz sesi (sentetik) sessiz modda duyulmayabilir: duymuyorsan sessiz modu kapatmayı dene.</li>
           <li>Bir dilin cihaz sesi yoksa: Ayarlar → Erişilebilirlik → Seslendirilen İçerik → Sesler → dili seçip bir ses indir.</li>
-          <li>İnsan kayıtları ilk çalmada internetten (Wikimedia) iner, sonra cihazda saklanır.</li>
+          <li>İnsan kayıtları kelime ekrana gelince internetten (Wikimedia) iner, sonra cihazda saklanır ve dokununca hemen çalar.</li>
         </ul>
       </Card>
       <Card title="Rapor">
