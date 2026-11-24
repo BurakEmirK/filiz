@@ -60,7 +60,7 @@ function LearnInner() {
       </div>
 
       <Card title="Başlangıç dersleri" icon={<Icon.learn />}>
-        <p className="tiny muted">Elle hazırlanmış, resimli kısa dersler.</p>
+        <p className="tiny muted">Elle hazırlanmış kısa dersler: önce resimli ilk kelimeler, sonra günlük durumlar için kalıp ifadeler.</p>
         <div>{starter.map(lessonRow)}</div>
       </Card>
 
@@ -112,12 +112,14 @@ function LearnInner() {
 
 /** Ders kütüphanesi satırı */
 export function LessonRow({ lesson: l, state: st }: { lesson: Lesson; state?: LessonState }) {
+  const lemmas = l.senseIds.map((id) => content.senses.get(id)).filter(Boolean).map((s) => content.lemma(s!))
   return (
     <div className="lesson-row">
       <span className="grow">
         <span className="row-title">{l.title}</span>
         <span className="row-detail" lang={l.lang}>
-          {l.senseIds.map((id) => content.senses.get(id)).filter(Boolean).map((s) => content.lemma(s!)).join(', ')}
+          {/* Kalıp ifadelerin kendisinde virgül olabilir ("счёт, пожалуйста"); o zaman öğeler noktalı virgülle ayrılır */}
+          {lemmas.join(lemmas.some((x) => x.includes(',')) ? '; ' : ', ')}
         </span>
       </span>
       {st?.status === 'completed' ? <span className="pill good">Tamam</span> : st?.status === 'skipped-known' ? <span className="pill info">Biliyorum</span> : null}

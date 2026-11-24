@@ -3,6 +3,7 @@ import { browserFetcher, convertWords, lowerLemma, type Fetcher, type GenIndex, 
 import { INDUSTRIES } from './industries'
 import { LANGUAGES } from './languages'
 import { EN_CORE, EN_TEXTILE } from './packs/en'
+import { SITUATION_TOPIC } from './packs/helpers'
 import { FR_CORE, ES_CORE, HU_CORE, TR_CORE } from './packs/others'
 import { RU_CORE, RU_TEXTILE } from './packs/ru'
 import { stripStress } from '../domain/text'
@@ -195,7 +196,8 @@ export class ContentRegistry {
     const source = pool.length >= count ? pool : fallback
     return shuffle(source, rnd).slice(0, count)
   }
-  /** Anlam seçme alıştırması için çeldiriciler: farklı anlamlı, mümkünse aynı türden ve yakın sıklıkta kelimeler */
+  /** Anlam seçme alıştırması için çeldiriciler: farklı anlamlı, mümkünse aynı türden ve yakın sıklıkta kelimeler.
+   *  Başlangıç yolundaki kalıp ifadeler için çeldiriciler de kalıp ifadelerdir (tek kelimeler soruyu fazla kolaylaştırır). */
   glossDistractors(sense: Sense, count: number, rnd: () => number = Math.random): Sense[] {
     const own = this.gloss(sense).toLocaleLowerCase('tr')
     const pool = isSoundSense(sense.id)
@@ -205,7 +207,8 @@ export class ContentRegistry {
     const near = distinct.filter(
       (s) => (!sense.posLabel || s.posLabel === sense.posLabel) && Math.abs((s.rank ?? 0) - (sense.rank ?? 0)) <= 400,
     )
-    const source = near.length >= count * 3 ? near : distinct
+    const phrases = sense.topics.includes(SITUATION_TOPIC) ? distinct.filter((s) => s.topics.includes(SITUATION_TOPIC)) : []
+    const source = phrases.length >= count ? phrases : near.length >= count * 3 ? near : distinct
     const picked: Sense[] = []
     const seen = new Set([own])
     for (const s of shuffle(source, rnd)) {

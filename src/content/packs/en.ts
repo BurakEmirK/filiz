@@ -1,5 +1,5 @@
 import type { ContentPack } from '../types'
-import { collect, word } from './helpers'
+import { collect, phrase, situationLessons, tatoeba, word, type PhraseInput } from './helpers'
 
 // İngilizce örnek içerik: temel + tekstil. Durum: yapay zekâ taslağı — uzman doğrulaması yok.
 // Tekstil bölümü genel İngilizce seviyesinden bağımsız olarak baştan başlatılabilir.
@@ -53,13 +53,141 @@ const core = collect([
     prompt: 'Birine bir şey için teşekkür eden bir cümle yaz.' }),
 ])
 
+// Durumlara dayalı başlangıç yolu (en-core-5 … en-core-9). Örnek cümleler ve Türkçe çevirileri Tatoeba'dan.
+const P = (x: Omit<PhraseInput, 'lang'>) => phrase({ ...x, lang: L })
+
+const situations = collect([
+  // Selamlaşma ve tanışma
+  P({ situation: 'greetings', concept: 'good-morning', lemma: 'good morning', pron: { approx: 'gud moorning' },
+    explanation: 'Sabah selamı; öğleye kadar kullanılır. Öğleden sonra "good afternoon", akşam "good evening" denir.',
+    example: ['Good morning, doctor!', 'Günaydın, doktor!', tatoeba(1388921)],
+    prompt: 'Sabah iş arkadaşlarını selamlayan kısa bir cümle yaz.' }),
+  P({ situation: 'greetings', concept: 'my-name-is', lemma: 'my name is', pron: { approx: 'may neym iz' },
+    explanation: 'Kendini tanıtırken: "My name is Anna." Daha gündelik: "I\'m Anna."',
+    example: ['My name is Jack.', 'Benim adım Jack.', tatoeba(1646)],
+    prompt: 'Adını söyleyerek kendini tanıtan bir cümle yaz.' }),
+  P({ situation: 'greetings', concept: 'nice-to-meet-you', lemma: 'nice to meet you', pron: { approx: 'nays tı miit yu' },
+    explanation: 'Biriyle ilk kez tanışınca söylenir. Karşılık: "Nice to meet you, too."',
+    example: ["It's nice to meet you.", 'Tanıştığımıza memnun oldum.', tatoeba(64723)],
+    prompt: 'Yeni tanıştığın birine memnun olduğunu söyleyen bir cümle yaz.' }),
+  P({ situation: 'greetings', concept: 'how-are-you', lemma: 'how are you', pron: { approx: 'hau aar yu' },
+    explanation: '"Nasılsın?" Hem resmî hem samimi durumlarda kullanılır. Kısa cevap: "Fine, thanks."',
+    example: ['Hi, how are you?', 'Merhaba, nasılsın?', tatoeba(473177)],
+    prompt: 'Bir arkadaşına nasıl olduğunu soran bir cümle yaz.' }),
+  P({ situation: 'greetings', concept: 'see-you-later', lemma: 'see you later', pron: { approx: 'sii yu leytır' },
+    explanation: 'Gündelik vedalaşma: "Sonra görüşürüz." Ertesi gün görüşecekseniz "see you tomorrow".',
+    example: ['See you later, OK?', 'Sonra görüşürüz, tamam mı?', tatoeba(2648462)],
+    prompt: 'İş yerinden çıkarken vedalaşan kısa bir cümle yaz.' }),
+
+  // Kafede ve markette
+  P({ situation: 'shopping', concept: 'how-much', lemma: 'how much', pron: { approx: 'hau maç' },
+    explanation: 'Fiyat sorarken: "How much is it?" (tek şey), "How much are they?" (birden fazla).',
+    example: ['How much are eggs?', 'Yumurta ne kadar?', tatoeba(6358079)],
+    prompt: 'Markette bir ürünün fiyatını soran bir cümle yaz.' }),
+  P({ situation: 'shopping', concept: 'i-would-like', lemma: "I'd like", pron: { approx: 'ayd layk' },
+    explanation: '"I would like" kısaltması: kibarca "… istiyorum". "I want" daha sert duyulabilir.',
+    example: ["I'd like a tea.", 'Bir çay istiyorum.', tatoeba(64225)],
+    forms: ["I'd like", 'I would like'],
+    prompt: 'Kafede kibarca bir şey isteyen bir cümle yaz.' }),
+  P({ situation: 'shopping', concept: 'cup-of-coffee', lemma: 'cup of coffee', pron: { approx: 'kap ıv kofi' },
+    explanation: 'Bir fincan kahve: "a cup of coffee". Kahve sayılamaz; "a coffee" gündelik konuşmada da duyulur.',
+    example: ['A cup of coffee, please.', 'Bir fincan kahve, lütfen.', tatoeba(630218)],
+    forms: ['cup of coffee', 'cups of coffee'],
+    prompt: 'Kafede kahve sipariş eden bir cümle yaz.' }),
+  P({ situation: 'shopping', concept: 'pay-by-card', lemma: 'pay by credit card', pron: { approx: 'pey bay kredit kaard' },
+    explanation: 'Kredi kartıyla ödemek. Sorarken: "Can I pay by credit card?" Nakit: "pay in cash".',
+    example: ['Can I pay by credit card?', 'Kredi kartı ile ödeyebilir miyim?', tatoeba(2238)],
+    forms: ['pay by credit card', 'paid by credit card', 'paying by credit card'],
+    prompt: 'Kasada kartla ödeyip ödeyemeyeceğini soran bir cümle yaz.' }),
+  P({ situation: 'shopping', concept: 'the-bill-please', lemma: 'the bill, please', pron: { approx: 'dhı bil pliiz' },
+    explanation: 'Restoranda hesabı isterken. Amerikan İngilizcesinde "the check, please".',
+    example: ['Waiter, the bill please.', 'Garson, hesap lütfen.', tatoeba(2063902)],
+    forms: ['the bill, please', 'the bill please'],
+    prompt: 'Kafede hesabı isteyen kısa bir cümle yaz.' }),
+
+  // Yol sorma
+  P({ situation: 'directions', concept: 'excuse-me', lemma: 'excuse me', pron: { approx: 'ikskyuuz mii' },
+    explanation: 'Tanımadığın birine seslenirken veya yol sorarken: "Affedersiniz." Özür için "sorry" denir.',
+    example: ["Excuse me, where's the exit?", 'Affedersiniz, çıkış nerede?', tatoeba(3549610)],
+    prompt: 'Sokakta birine seslenip yol soran bir cümle yaz.' }),
+  P({ situation: 'directions', concept: 'where-is', lemma: 'where is', pron: { approx: 'weır iz' },
+    explanation: 'Bir yerin nerede olduğunu sorarken: "Where is the …?" Kısaltması "where\'s".',
+    example: ['Where is the station?', 'İstasyon nerede?', tatoeba(544611)],
+    forms: ['where is', "where's"],
+    prompt: 'Bir binanın nerede olduğunu soran bir cümle yaz.' }),
+  P({ situation: 'directions', concept: 'how-to-get-to', lemma: 'how do I get to', pron: { approx: 'hau du ay get tu' },
+    explanation: 'Bir yere nasıl gidileceğini sorarken: "How do I get to the …?" = "…\'e nasıl giderim?"',
+    example: ['How do I get to the zoo?', 'Hayvanat bahçesine nasıl gidebilirim?', tatoeba(4038992)],
+    prompt: 'Bir yere nasıl gidileceğini soran bir cümle yaz.' }),
+  P({ situation: 'directions', concept: 'turn-left', lemma: 'turn left', pron: { approx: 'törn left' },
+    explanation: 'Yol tarifi: "Sola dön(ün)." Sağa: "turn right".',
+    example: ['Turn left here.', 'Burada sola dön.', tatoeba(2253826)],
+    prompt: 'Birine köşeden sola dönmesini söyleyen bir cümle yaz.' }),
+  P({ situation: 'directions', concept: 'go-straight', lemma: 'go straight', pron: { approx: 'gou streyt' },
+    explanation: 'Yol tarifi: "Düz gidin." Sık kullanılan biçimi: "Go straight ahead."',
+    example: ['Go straight ahead.', 'Dümdüz gidin.', tatoeba(269559)],
+    prompt: 'Birine düz gitmesini söyleyen bir yol tarifi yaz.' }),
+
+  // Sayılar ve saat
+  P({ situation: 'time', concept: 'what-time-is-it', lemma: 'what time is it', pron: { approx: 'wot taym iz it' },
+    explanation: 'Saati sorarken: "Saat kaç?"',
+    example: ['What time is it now?', 'Şimdi saat kaç?', tatoeba(455073)],
+    prompt: 'Birine saati soran bir cümle yaz.' }),
+  P({ situation: 'time', concept: 'at-two-oclock', lemma: "at two o'clock", pron: { approx: 'et tuu ıklok' },
+    explanation: 'Saat ikide. Tam saatlerde "o\'clock" denir: "at seven o\'clock" = saat yedide.',
+    example: ["Come at two o'clock.", 'Saat ikide gel.', tatoeba(2255596)],
+    prompt: 'Bir buluşma saatini söyleyen bir cümle yaz.' }),
+  P({ situation: 'time', concept: 'in-ten-minutes', lemma: 'in ten minutes', pron: { approx: 'in ten minits' },
+    explanation: 'On dakika içinde, on dakika sonra. "Ten minutes ago" = on dakika önce.',
+    example: ["I'll be ready in ten minutes.", 'On dakika içinde hazır olacağım.', tatoeba(1890872)],
+    prompt: 'Birkaç dakika içinde hazır olacağını söyleyen bir cümle yaz.' }),
+  P({ situation: 'time', concept: 'phone-number', lemma: 'phone number', pron: { approx: 'foun nambır' },
+    explanation: 'Telefon numarası. Sayıları tek tek okunur: 5-3-2 = "five three two".',
+    example: ["What's your phone number?", 'Telefon numaran nedir?', tatoeba(466624)],
+    forms: ['phone number', 'phone numbers'],
+    prompt: 'Birinin telefon numarasını soran bir cümle yaz.' }),
+  P({ situation: 'time', concept: 'how-old-are-you', lemma: 'how old are you', pron: { approx: 'hau ould aar yu' },
+    explanation: 'Yaş sorarken: "Kaç yaşındasın?" Cevap: "I\'m thirty" veya "I\'m thirty years old".',
+    example: ['How old are you?', 'Kaç yaşındasın?', tatoeba(436243)],
+    prompt: 'Kendi yaşını söyleyen bir cümle yaz.' }),
+
+  // İş yerinde (tekstil bağlamı)
+  P({ situation: 'work', concept: 'work-in-factory', lemma: 'work in a factory', pron: { approx: 'wörk in ı fektıri' },
+    explanation: 'Fabrikada çalışmak. Tekstil fabrikası: "textile factory" veya "textile mill".',
+    example: ['I work in a factory.', 'Ben bir fabrikada çalışıyorum.', tatoeba(2412764)],
+    forms: ['work in a factory', 'works in a factory', 'worked in a factory', 'working in a factory'],
+    prompt: 'Nerede çalıştığını anlatan bir cümle yaz.' }),
+  P({ situation: 'work', concept: 'dont-understand', lemma: "I don't understand", pron: { approx: 'ay dont andırstend' },
+    explanation: 'Anlamadığını söylerken: "Anlamıyorum." Kibar biçim: "Sorry, I don\'t understand."',
+    example: ["I don't understand it.", 'Bunu anlamıyorum.', tatoeba(1841686)],
+    forms: ["I don't understand", 'I do not understand'],
+    prompt: 'Bir talimatı anlamadığını söyleyen bir cümle yaz.' }),
+  P({ situation: 'work', concept: 'repeat-please', lemma: 'can you repeat that', pron: { approx: 'ken yu ripiit dhet' },
+    explanation: 'Kibarca tekrar isterken: "Tekrar eder misiniz?" Daha kibar: "Could you repeat that, please?"',
+    example: ['Can you repeat that, please?', 'Onu tekrar eder misiniz lütfen?', tatoeba(3329632)],
+    forms: ['can you repeat that', 'could you repeat that'],
+    prompt: 'Toplantıda bir şeyi kaçırdığında tekrar isteyen bir cümle yaz.' }),
+  P({ situation: 'work', concept: 'speak-slower', lemma: 'speak more slowly', pron: { approx: 'spiik moor slouli' },
+    explanation: 'Daha yavaş konuşmasını isterken. Başına "please" eklemek kibarlaştırır.',
+    example: ['Please speak more slowly.', 'Lütfen daha yavaş konuşun.', tatoeba(456627)],
+    prompt: 'Birinden daha yavaş konuşmasını isteyen kibar bir cümle yaz.' }),
+  P({ situation: 'work', concept: 'your-order-ready', lemma: 'your order is ready', pron: { approx: 'yoor oordır iz redi' },
+    explanation: 'Müşteriye siparişin hazır olduğunu bildirirken. "order" burada "sipariş" demektir.',
+    example: ['Your order is ready.', 'Siparişiniz hazır.', tatoeba(70901)],
+    prompt: 'Müşteriye siparişinin hazır olduğunu bildiren bir cümle yaz.' }),
+])
+
 export const EN_CORE: ContentPack = {
-  id: 'en-core', lang: L, version: 1, title: 'İngilizce — temel örnek içerik', status: 'sample', ...core,
+  id: 'en-core', lang: L, version: 1, title: 'İngilizce — temel örnek içerik', status: 'sample',
+  lexemes: [...core.lexemes, ...situations.lexemes],
+  senses: [...core.senses, ...situations.senses],
   lessons: [
     { id: 'en-core-1', lang: L, title: 'Yiyecek ve içecek', track: 'core', order: 1, senseIds: ['en-apple', 'en-water', 'en-bread', 'en-milk'] },
     { id: 'en-core-2', lang: L, title: 'Ev ve hayvanlar', track: 'core', order: 2, senseIds: ['en-house', 'en-book', 'en-cat', 'en-dog'] },
     { id: 'en-core-3', lang: L, title: 'Selamlaşma ve teşekkür', track: 'core', order: 3, senseIds: ['en-hello', 'en-thanks'] },
     { id: 'en-core-4', lang: L, title: 'Bir kelime, farklı anlamlar: book', track: 'core', order: 4, senseIds: ['en-book-reserve'] },
+    // Durumlara dayalı başlangıç yolu
+    ...situationLessons(L, 5, situations.senses),
   ],
 }
 

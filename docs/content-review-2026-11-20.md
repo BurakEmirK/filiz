@@ -110,3 +110,9 @@ Kalıcı test: [tests/contentQuality.test.ts](../tests/contentQuality.test.ts).
 - Elle hazırlanmış başlangıç dersleri (yapay zekâ taslağı) bu turda yeniden incelenmedi.
 - Durumlara ve kalıp cümlelere dayalı ayrı bir başlangıç yolu henüz yazılmadı. Bugün başlangıç yolu şu sırada ilerliyor:
   Sesler ve Harfler, ardından elle hazırlanmış konu dersleri (yiyecek, ev, selamlaşma), ardından sıklık sırası.
+  - **Güncelleme (2026-11-24):** Rusça, İngilizce ve Macarca için beş durum dersi eklendi: selamlaşma ve tanışma, kafede
+    ve markette, yol sorma, sayılar ve saat, iş yerinde (tekstil bağlamı). Her derste 4–5 kalıp ifade var. Sıra artık:
+    Sesler ve Harfler, elle hazırlanmış konu dersleri, durum dersleri, sıklık sırası. Örnek cümleler Tatoeba'dan alındı ve
+    kaynak kimliği saklandı. Tatoeba'da Türkçe çevirisi olmayanların çevirisi "(makine çevirisi)" diye etiketli, düzeltilen
+    iki çeviri "(çeviri düzeltildi)" diye etiketli. İçerik yapay zekâ taslağıdır; uzman doğrulaması yoktur.
+    Testler: `tests/situations.test.ts`. Fransızca, İspanyolca ve Türkçe için durum dersleri yok.
