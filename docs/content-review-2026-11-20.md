@@ -105,8 +105,9 @@ Kalıcı test: [tests/contentQuality.test.ts](../tests/contentQuality.test.ts).
 - Paketlerin geri kalanı (~3100 kelime/dil) kontrol edilmedi. Biçim listesindeki aynı tür hatalar orada da var. Uygulamadaki
   "boşluk doldur" koruması yanlış boşluk sorusunu engeller, ama yanlış seçilmiş örnek cümleler kalmış olabilir.
   Kalıcı çözüm: `build_content.py` içinde biçimleri Vikisözlük etiketlerine göre süzmek (eski, ağız, kısaltma, Roma
-  rakamı) ve paketleri yeniden üretmek.
-- Fransızca, İspanyolca ve Türkçe paketler bu denetime dahil değil.
+  rakamı) ve paketleri yeniden üretmek. **Yapıldı (2026-11-24), aşağıdaki bölüme bakın.**
+- Fransızca, İspanyolca ve Türkçe paketler bu denetime dahil değil. **İlk 100 kelimeleri 2026-11-24'te denetlendi,
+  aşağıdaki bölüme bakın.**
 - Elle hazırlanmış başlangıç dersleri (yapay zekâ taslağı) bu turda yeniden incelenmedi.
 - Durumlara ve kalıp cümlelere dayalı ayrı bir başlangıç yolu henüz yazılmadı. Bugün başlangıç yolu şu sırada ilerliyor:
   Sesler ve Harfler, ardından elle hazırlanmış konu dersleri (yiyecek, ev, selamlaşma), ardından sıklık sırası.
@@ -116,3 +117,139 @@ Kalıcı test: [tests/contentQuality.test.ts](../tests/contentQuality.test.ts).
     kaynak kimliği saklandı. Tatoeba'da Türkçe çevirisi olmayanların çevirisi "(makine çevirisi)" diye etiketli, düzeltilen
     iki çeviri "(çeviri düzeltildi)" diye etiketli. İçerik yapay zekâ taslağıdır; uzman doğrulaması yoktur.
     Testler: `tests/situations.test.ts`. Fransızca, İspanyolca ve Türkçe için durum dersleri yok.
+
+---
+
+# Ek: biçim listesi süzmesi ve Fransızca, İspanyolca, Türkçe ilk 100 kelime (2026-11-24)
+
+> Bu da bir **yapay zekâ (Claude) incelemesidir**, uzman dilbilimci doğrulaması değildir. Düzeltmeler açık hataları
+> giderir; "emin değilim" listesi bir anadili konuşan ya da öğretmen tarafından kontrol edilmelidir.
+
+## 1. Biçim listesi Vikisözlük etiketlerine göre süzüldü
+
+**Sorun:** Vikisözlük'ün biçim listesine eski yazımlar, ağız biçimleri ve Roma rakamları karışıyordu. Örnek cümle bu
+yanlış biçimlere göre seçiliyordu: "one" ve "first" için "I", "my" için "me", "they" için "the", "of" için "a".
+
+**Yapılan:** `scripts/content/build_content.py` artık şu etiketleri taşıyan biçimleri listeye almıyor:
+- "alternative form" girişleri;
+- eski yazımlar (obsolete, archaic, dated; Rusçada devrim öncesi yazım, ör. "былъ");
+- ağız biçimleri ve standart dışı yazımlar;
+- yazım hataları;
+- kısaltmalar;
+- Roma rakamları;
+- bileşik zamanların yardımcı fiili (ör. Fransızca "être" listesindeki "ayant").
+
+Bir biçim tabloda bir kez eski, bir kez olağan etiketle geçiyorsa (İng. "were") kalır.
+
+**Korunan standart çeşitler:** Vikisözlük bazı standart biçimleri de "alternative" diye etiketliyor. Bunlar elle bir
+listeye yazıldı (`scripts/content/overrides.py`, `KEEP_FORMS`). Örnekler:
+- Rusça: во, со, изо, об, чтоб;
+- Macarca: nincsen, föl, közt, sose;
+- İspanyolca: e (y yerine), u (o yerine), gran, ningún;
+- Türkçe: mı, mu, mü, hadi, filan.
+
+Yalnızca aksan ya da bitişik harf farkı olan yazımlar (cœur/coeur, connaître/connaitre, hâlâ/hala) ve İngiliz/Amerikan
+yazımları (centre, programme) da kalır.
+
+**Etkisi (önceki paketle karşılaştırma):**
+
+| Dil | Biçim listesi kısalan kelime | Örnek cümlesi değişen kelime |
+|---|---|---|
+| ru | 894 | 4 |
+| hu | 114 | 13 |
+| fr | 217 | 55 (26'sı elle seçilen yeni örnek) |
+| es | 249 | 45 (25'i elle seçilen yeni örnek) |
+| en | 1378 | 62 |
+| tr | 127 | 33 (19'u elle seçilen yeni örnek) |
+
+Süzmenin kendiliğinden düzelttiği örnekler:
+- İngilizce: "inch" için "in", "butt" için "but", "khan" için "can" içeren cümleler gitti.
+- Fransızca: "partir" ve "passer", "avoir" içeren ilgisiz bir cümle yerine kendi cümlelerini aldı.
+
+Uygulamada "boşluk doldur" ve cümle kurma kontrolü de bu listeyi kullanır. Artık "I" ile başlayan bir cümle "one"
+kelimesini içeriyor sayılmaz.
+
+**Kimlikler değişmedi.** Kelime sırası, anlam kimlikleri (`g:<dil>:<kelime>#n`) ve ders kimlikleri (`g-<dil>-<n>`)
+altı dilde de önceki paketle birebir aynı. Gizlenen anlamlar dahil hiçbir numara kaymadı. Bunun için sıralama
+bilerek eski, süzülmemiş biçimlerle yapılıyor.
+
+**Sınama yolu:** `scripts/content/preview_forms.py` seçilen kelimelerin önceki ve sonraki biçim listesini yazdırır.
+Kalıcı testler: `tests/contentQuality.test.ts`.
+
+## 2. Fransızca, İspanyolca, Türkçe ilk 100 kelime
+
+Yöntem: `scripts/content/audit_examples.py` ile örnek cümle denetimi, ardından anlamların ve çevirilerin tek tek
+okunması. Yeni örneklerin hepsi Tatoeba'dan alındı (kaynak kimliği saklı).
+
+| Dil | Düzeltilen kelime | Yeni örnek | Düzeltilen anlam | Gizlenen anlam | Düzeltilen cümle çevirisi |
+|---|---|---|---|---|---|
+| fr | 49 | 26 | 31 | 18 | 5 |
+| es | 72 | 25 | 56 | 47 | 3 |
+| tr | 62 | 19 | 79 | 11 | 0 |
+
+**Türkçe paket (en ciddi sorun).** Türkçe Vikisözlük tanımları İngilizce anlamlarla sırayla eşlenmiş, bu yüzden
+kaymışlardı. Örnekler:
+- şey = "erkeklik organı" → "herhangi bir nesne, olay ya da durum" (uygunsuz anlam gizlendi);
+- gün = "Güneş" → "24 saatlik süre";
+- iyi = "aşırı, bol, çok" → "beğenilen, istenilen nitelikleri taşıyan";
+- etmek = "birini bir şeyden mahrum bırakmak" → "yapmak, kılmak";
+- bilmek, yaşamak, olmak, daha, o, hak, sonra ve diğer 40'tan fazla kelimede yanlış eşleşmeler düzeltildi.
+
+Türkçe örneklerde başka bir kelime öğretiliyordu:
+- varmak için "var";
+- iç ve içmek için "için";
+- il için "ile";
+- baş için "başlar";
+- birlik için "birlikte";
+- hak için "hakkında".
+
+Hepsine kelimenin kendisini gösteren kısa cümleler verildi. Türkçe paketteki çeviriler İngilizcedir;
+`apply_corrections.py` artık düzeltilen örneğin İngilizce çevirisini de taşıyor.
+
+**Fransızca.**
+- Örnek cümle başka bir kelimeyi gösteriyordu:
+  - mai (mayıs) için "mais";
+  - plaire için "plus";
+  - nouveau için "nouvelle" (haber);
+  - ils için "il";
+  - un, nous, vous, elle, peu ve votre için kelimeyi hiç içermeyen cümleler.
+- Anlam yanlışları:
+  - non = "yasaktır, yok" → "hayır; değil";
+  - comme = "hoşlanmak, sevmek" → "gibi";
+  - aussi'nin ana anlamı "bu yüzden" → "de, da; ayrıca";
+  - personne = "kimse yok / herkes" → "hiç kimse / herhangi biri";
+  - encore = "daha" → "hâlâ; henüz";
+  - être = "imek" → "olmak; -dir".
+- Bozuk makine çevirisi anlamlar gizlendi: "ı want to may", "başkası için substitutes", "iyi gökler".
+
+**İspanyolca.**
+- Örnek cümle başka bir kelimeyi gösteriyordu:
+  - ver için "Ven a mi casa" (venir);
+  - nuevo için "Nueva York";
+  - unir için "una";
+  - parar için "para";
+  - partir için "partes";
+  - el, ella, él, yo ve ustedes için kelimeyi içermeyen cümleler.
+- Anlam yanlışları:
+  - no = "yasaktır, yok" → "hayır";
+  - solo = "taban, dil balığı" → "tek, biricik";
+  - tiempo = "hava" → "zaman, vakit";
+  - donde = "çünkü" → "-diği yer";
+  - primero = "önceki" → "birinci, ilk".
+- Bozuk makine çevirileri gizlendi: "nouns'tan ad hoc fiilleri oluşturmak", "emphatic negations'da kullanılır".
+
+## 3. Emin olunamayanlar ve sınırlar
+
+| Dil | Konu | Neden |
+|---|---|---|
+| hepsi | Sıralama | Kelime sırası kimlikler değişmesin diye hâlâ süzülmemiş biçimlerle hesaplanıyor. Bu yüzden bazı kelimelerin yeri yanlış biçimlerin sıklığıyla şişmiş: fr "mai" (mais), "plaire" (s'il vous plaît), es "unir" (una), "parar" (para). Bunlar ilk 100'de kalıyor; örnek cümleleri düzeltildi. |
+| fr, es, ru | Zamir tabloları | Vikisözlük'ün zamir tablosu öteki zamirleri de biçim sayıyor (он → я, ты; elle → lui; él → ella). Etiketle ayrılamıyor; ilk 100'deki örnekler elle düzeltildi, paketin geri kalanında kalmış olabilir. |
+| tr | Fiil örnekleri | Türkçe fiillerin çoğu çekimi (olduğun, vardık, yedim) biçim listesinde yok. Örnekler doğru ama uygulama bu cümlelerde boşluk doldurma sorusu kuramaz. |
+| tr | varmak | Yeni örnek "Biz vardık." hem "ulaştık" hem "oradaydık" diye okunabilir; Tatoeba'daki İngilizcesi "We've arrived". |
+| es | dar, poner, saber, poder | Örnekler düzensiz çekim kullanıyor (di, puso, sé, puedo); doğru ama boşluk doldurmaya uygun değil. |
+| es | ante | Yeni örnek "Deberías disculparte ante mí." Türkçesi "Benden özür dilemelisin." ("ante" doğrudan çevrilmiyor). |
+| fr | faire, la | Eski örnek ("mordre la poussière") bir deyimdi; yenileri basit cümleler. |
+| hepsi | ikincil anlamlar | Yalnızca açıkça bozuk olanlar düzeltildi ya da gizlendi. Diğer ikincil anlamlar tek tek kontrol edilmedi. |
+
+Paketlerin ilk 100'den sonraki kısmı (~3100 kelime/dil) yine elle denetlenmedi. Biçim süzmesi oradaki örnek
+seçimini de iyileştirdi, ama anlam kaymaları (özellikle Türkçe pakette) kalmış olabilir.

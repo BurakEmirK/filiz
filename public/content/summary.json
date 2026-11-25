@@ -1,5 +1,5 @@
 {
- "built": "2026-11-19",
+ "built": "2026-11-24",
  "langs": {
   "ru": {
    "words": 3200,
@@ -19,7 +19,7 @@
    "curated": 0.011,
    "audio": 0.52,
    "example": 0.965,
-   "example_tr_human": 0.324,
+   "example_tr_human": 0.323,
    "emoji": 0.101,
    "ipa": 0.999,
    "pivot-en": 0.529,
@@ -29,36 +29,36 @@
   },
   "fr": {
    "words": 3200,
-   "pivot-en": 0.321,
+   "pivot-en": 0.319,
    "audio": 0.978,
    "example": 0.992,
-   "example_tr_human": 0.704,
+   "example_tr_human": 0.703,
    "emoji": 0.118,
    "ipa": 0.995,
-   "vikisozluk-tr": 0.536,
-   "curated": 0.006,
+   "curated": 0.009,
+   "vikisozluk-tr": 0.535,
    "mt": 0.104,
    "yok": 0.033
   },
   "es": {
    "words": 3200,
-   "pivot-en": 0.578,
+   "pivot-en": 0.574,
    "audio": 0.186,
    "example": 0.989,
-   "example_tr_human": 0.745,
+   "example_tr_human": 0.744,
    "emoji": 0.109,
    "ipa": 0.995,
-   "curated": 0.008,
-   "vikisozluk-tr": 0.22,
-   "mt": 0.155,
+   "curated": 0.014,
+   "vikisozluk-tr": 0.219,
+   "mt": 0.154,
    "yok": 0.039
   },
   "en": {
    "words": 3200,
    "curated": 0.015,
    "audio": 0.993,
-   "example": 0.997,
-   "example_tr_human": 0.997,
+   "example": 0.994,
+   "example_tr_human": 0.994,
    "emoji": 0.119,
    "ipa": 0.993,
    "vikisozluk-en": 0.81,
@@ -75,7 +75,8 @@
    "example_tr_human": 0.0,
    "emoji": 0.112,
    "ipa": 0.79,
-   "vikisozluk-tr": 0.932
+   "vikisozluk-tr": 0.929,
+   "curated": 0.004
   }
  }
 }

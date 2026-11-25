@@ -28,7 +28,7 @@ from collections import Counter, defaultdict
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from overrides import BLACKLIST, OVERRIDES  # noqa: E402
+from overrides import BLACKLIST, KEEP_FORMS, OVERRIDES  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[2]
 RAW = ROOT / 'data-raw'
@@ -56,6 +56,24 @@ WEAK_FORM_TAGS = WEAK_TAGS | {
     'dialectal', 'eye-dialect', 'pronunciation-spelling', 'abbreviation', 'initialism', 'acronym', 'informal',
     'colloquial', 'slang', 'Internet', 'alternative', 'clipping', 'contraction',
 }
+# Kelimenin biçim listesine (f) alınmayan biçimler, Vikisözlük etiketlerine göre: "alternative form" girişleri,
+# eski yazımlar, ağız biçimleri, standart dışı yazımlar, yazım hataları, kısaltmalar ve Roma rakamları.
+# Örnek: "one" ve "first" için "I" (Roma rakamı), "my" için "me", "they" için "the", "of" için "a".
+# Aynı biçim tabloda bir kez eski/ağız, bir kez olağan etiketle geçebilir (İng. "were"); olağan geçişi yeterlidir.
+# Bu süzme yalnızca biçim listesini ve örnek cümle seçimini etkiler. Sıralama süzülmemiş biçimlerle yapılır;
+# böylece kelime sırası, ders ve anlam kimlikleri değişmez.
+# Rusçada devrim öncesi yazımlar (собакъ, собакѣ) "dated" etiketlidir. "informal" süzülmez: İspanyolca ve Macarcada
+# senli (tú) çekimleri bu etiketi taşır. "multiword-construction": bileşik zamanların yardımcı fiili (être → "ayant").
+DROP_FORM_TAGS = {
+    'alternative', 'alt-of', 'obsolete', 'archaic', 'dated', 'historical', 'pre-reform', 'superseded',
+    'dialectal', 'eye-dialect', 'pronunciation-spelling', 'nonstandard', 'proscribed', 'misspelling',
+    'hypercorrect', 'misconstruction', 'colloquial', 'slang', 'Internet',
+    'abbreviation', 'initialism', 'acronym', 'clipping', 'Roman', 'roman', 'multiword-construction',
+}
+# Bölge etiketli "alternative" yazım, başka bir sorun etiketi yoksa standarttır (İng. centre, programme)
+STANDARD_REGION_TAGS = {'UK', 'US', 'British', 'American', 'Commonwealth', 'Canada', 'Australia', 'New-Zealand'}
+# Etiket yerine serbest metin (raw_tags) olarak gelenler
+DROP_FORM_RAW = re.compile(r'obsolete|archaic|dated|pre-reform|pre-1918|dialect|nonstandard|misspell|roman numeral|abbreviat')
 FUNCTION_POS = {'pron', 'det', 'article', 'prep', 'postp', 'conj', 'contraction'}
 LETTER_GLOSS = re.compile(r'(name of the .*letter|letter of the .*alphabet|^the letter )', re.I)
 NO_TR_POS = {'name', 'character', 'letter', 'symbol', 'abbrev', 'suffix', 'prefix', 'infix', 'affix', 'romanization'}
@@ -90,6 +108,29 @@ def valid(word: str, lang: str) -> bool:
     return bool((WORD_RE.get(lang) or WORD_RE['default']).match(word))
 
 
+def fold(s: str) -> str:
+    """Aksan ve bitişik harf farkını yok sayar: cœur = coeur, connaître = connaitre, événement = évènement."""
+    s = s.replace('œ', 'oe').replace('æ', 'ae')
+    return ''.join(c for c in unicodedata.normalize('NFD', s) if not unicodedata.combining(c))
+
+
+def form_kept(fm: dict, nf: str, nw: str, lang: str) -> bool:
+    """Vikisözlük biçim kaydı (forms[] öğesi) `nw` kelimesinin biçim listesine girer mi? Bkz. DROP_FORM_TAGS.
+
+    Üç istisna: KEEP_FORMS'taki standart çeşitler (Rusça в → во, Macarca nincs → nincsen), yalnızca aksan ya da
+    bitişik harf farkı olan "alternative" yazımlar (cœur → coeur) ve İngiliz/Amerikan yazımları (center → centre)."""
+    tags = set(fm.get('tags') or [])
+    raw = ' '.join(fm.get('raw_tags') or []).lower()
+    bad = tags & DROP_FORM_TAGS
+    if not bad and not DROP_FORM_RAW.search(raw):
+        return True
+    if nf in KEEP_FORMS.get(lang, {}).get(nw, ()):
+        return True
+    if bad != {'alternative'} or raw:
+        return False
+    return fold(nf) == fold(nw) or bool(tags & STANDARD_REGION_TAGS)
+
+
 # ---------------------------------------------------------------- 1. Sıklık
 def load_frequencies():
     from wordfreq import get_frequency_dict
@@ -118,9 +159,13 @@ def first_gloss(sense):
 
 
 def scan_enwiktionary(surfaces):
-    """Tek geçişte: çekim→sözlük biçimi eşlemesi, aday kelime bilgileri, İngilizce→Türkçe çeviriler."""
+    """Tek geçişte: çekim→sözlük biçimi eşlemesi, aday kelime bilgileri, İngilizce→Türkçe çeviriler.
+
+    İki eşleme döner: `formmap` sıralama içindir (tüm biçimler; değiştirilmedi, kelime sırası korunur),
+    `exmap` örnek cümle seçimi içindir (süzülmüş biçimler; bkz. DROP_FORM_TAGS)."""
     lemma_entries = {l: defaultdict(list) for l in LANGS}
     formmap = {l: defaultdict(set) for l in LANGS}
+    exmap = {l: defaultdict(set) for l in LANGS}
     en_tr = defaultdict(list)  # İngilizce kelime -> [(pos, sense, tr_word)]
     needles = [f'"lang_code": "{l}"' for l in LANGS]
     path = RAW / 'kaikki' / 'en-raw.jsonl.gz'
@@ -143,10 +188,12 @@ def scan_enwiktionary(surfaces):
             senses = o.get('senses') or []
             pos = o.get('pos') or ''
             # Çekim girişleri: "воду, вода'nın biçimidir". Kısaltma/eski yazım/lehçe ilişkileri alınmaz.
-            fo_targets = [
-                fo.get('word') for s in senses if not (set(s.get('tags') or []) & WEAK_FORM_TAGS)
+            fo_all = [
+                (fo.get('word'), set(s.get('tags') or [])) for s in senses
                 for fo in (s.get('form_of') or []) if fo.get('word')
             ]
+            fo_targets = [t for t, st in fo_all if not st & WEAK_FORM_TAGS]  # sıralama için (değişmedi)
+            fo_ex = [t for t, st in fo_all if not st & (WEAK_FORM_TAGS | DROP_FORM_TAGS)]  # örnek seçimi için
             lemma_senses = [
                 s for s in senses
                 if not s.get('form_of') and not s.get('alt_of') and not ({'form-of', 'alt-of'} & set(s.get('tags') or []))
@@ -155,6 +202,8 @@ def scan_enwiktionary(surfaces):
             if fo_targets and nw in surf:
                 for t in fo_targets:
                     formmap[lang][nw].add(norm(t, lang))
+                for t in fo_ex:
+                    exmap[lang][nw].add(norm(t, lang))
             # Büyük harfli girişler (kısaltma, özel ad) alınmaz; İngilizce "I" hariç
             if word != word.lower() and not (lang == 'en' and word == 'I'):
                 continue
@@ -173,9 +222,13 @@ def scan_enwiktionary(surfaces):
                     continue
                 nf = norm(ft, lang)
                 if valid(nf, lang):
-                    forms.append(nf)
+                    kept = form_kept(fm, nf, nw, lang)
+                    if kept:
+                        forms.append(nf)
                     if nf in surf and nf != nw:
                         formmap[lang][nf].add(nw)
+                        if kept:
+                            exmap[lang][nf].add(nw)
             ipa = next((s['ipa'] for s in o.get('sounds') or [] if s.get('ipa')), None)
             audio = [
                 {'u': s['mp3_url'], 'f': s.get('audio') or '', 't': s.get('tags') or []}
@@ -206,7 +259,7 @@ def scan_enwiktionary(surfaces):
                     if t.get('lang_code') == 'tr' and t.get('word') and 'obsolete' not in (t.get('tags') or []):
                         en_tr[nw].append((pos, t.get('sense') or '', t['word']))
     log(f'vikisözlük bitti: {n:,} satır, {parsed:,} çözümlendi')
-    return lemma_entries, formmap, en_tr
+    return lemma_entries, formmap, exmap, en_tr
 
 
 # ---------------------------------------------------------------- 3. Türkçe Vikisözlük
@@ -522,7 +575,7 @@ def main():
     t0 = time.time()
     OUT.mkdir(parents=True, exist_ok=True)
     surfaces = load_frequencies()
-    lemma_entries, formmap, en_tr = scan_enwiktionary(surfaces)
+    lemma_entries, formmap, exmap, en_tr = scan_enwiktionary(surfaces)
     trw, trw_audio = scan_trwiktionary()
     extra_audio = {l: scan_wikt_audio(p, l) for l, p in EXTRA_AUDIO.items() if p.exists()}
     mt = MT()
@@ -531,7 +584,7 @@ def main():
     for lang in LANGS:
         ranked, score = rank_lemmas(lang, surfaces, lemma_entries, formmap)
         entries = lemma_entries[lang]
-        # çekim → sözlük biçimi dizini (yalnızca seçilenler)
+        # çekim → sözlük biçimi dizini (yalnızca seçilenler; süzülmüş biçimlerle)
         chosen = set(ranked)
         form_index = defaultdict(set)
         for lem in ranked:
@@ -539,7 +592,7 @@ def main():
             for r in entries[lem]:
                 for fm in r['forms']:
                     form_index[fm].add(lem)
-        for s, lems in formmap[lang].items():
+        for s, lems in exmap[lang].items():
             for x in lems:
                 if x in chosen:
                     form_index[s].add(x)

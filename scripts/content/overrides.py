@@ -150,6 +150,33 @@ OVERRIDES = {
     },
 }
 
+# Vikisözlük'te "alternative form" diye etiketlenen ama günümüz dilinde standart olan çeşitler. Bunlar biçim listesinde
+# (f) kalır; diğer "alternative" biçimler elenir (bkz. build_content.py, DROP_FORM_TAGS). Yalnızca aksan ya da bitişik
+# harf farkı olanlar (cœur/coeur) için kayıt gerekmez, onlar zaten korunur. Kelime → korunacak biçimler.
+KEEP_FORMS = {
+    'ru': {
+        'в': {'во'}, 'с': {'со'}, 'к': {'ко'}, 'из': {'изо'}, 'от': {'ото'}, 'о': {'об', 'обо'}, 'об': {'обо'},
+        'под': {'подо'}, 'над': {'надо'}, 'перед': {'передо'}, 'без': {'безо'},
+        'её': {'нее'}, 'их': {'них'}, 'его': {'него'}, 'им': {'ним'},
+        'чтобы': {'чтоб'}, 'бы': {'б'}, 'же': {'ж'}, 'ли': {'ль'},
+    },
+    'hu': {
+        'sem': {'se'}, 'nincs': {'nincsen'}, 'sincs': {'sincsen'}, 'fel': {'föl'}, 'felett': {'fölött'},
+        'között': {'közt'}, 'soha': {'sohasem', 'sohase', 'sosem', 'sose'}, 'éppen': {'épp'},
+        'emlékszik': {'emlékezik'},
+    },
+    'fr': {
+        'on': {"l'on"},
+    },
+    'es': {
+        'y': {'e'}, 'o': {'u'}, 'grande': {'gran'}, 'ninguno': {'ningún'}, 'septiembre': {'setiembre'},
+    },
+    'tr': {
+        'mi': {'mı', 'mu', 'mü'}, 'haydi': {'hadi'}, 'falan': {'filan'}, 'elbette': {'elbet'}, 'abi': {'ağabey'},
+        'peki': {'pekiyi'},
+    },
+}
+
 # Eş yazım yüzünden sıklığı şişen ve listede yanlış yerde duran kelimeler
 BLACKLIST = {
     'fr': {'est'},  # "est" (doğu) — sıklığı büyük ölçüde être'nin "est" (dır) biçiminden geliyor

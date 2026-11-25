@@ -25,23 +25,30 @@ def load_corrections() -> dict:
     return json.loads(CORR.read_text(encoding='utf-8'))
 
 
-def tatoeba_lookup(lang: str, ids: set[str]) -> dict[str, tuple[str, str | None]]:
-    """Tatoeba kimliğinden (cümle, ilk Türkçe insan çevirisi)."""
+def tatoeba_lookup(lang: str, ids: set[str]) -> dict[str, tuple[str, str | None, str | None]]:
+    """Tatoeba kimliğinden (cümle, ilk Türkçe insan çevirisi, ilk İngilizce insan çevirisi).
+    Türkçe paket için çeviri İngilizcedir (Türkçe cümlenin Türkçe çevirisi olmaz)."""
     code = TATOEBA[lang]
     texts = load_texts(code, ids)
-    links: dict[str, list[str]] = {}
-    for r in read_tsv_bz2(RAW / 'tatoeba' / f'{code}-tur_links.tsv.bz2'):
-        if len(r) >= 2 and r[0] in ids:
-            links.setdefault(r[0], []).append(r[1])
-    trs = load_texts('tur', {i for v in links.values() for i in v})
-    return {i: (texts[i], next((trs[x] for x in links.get(i, []) if x in trs), None)) for i in ids if i in texts}
+
+    def linked(target: str) -> dict[str, str]:
+        links: dict[str, list[str]] = {}
+        for r in read_tsv_bz2(RAW / 'tatoeba' / f'{code}-{target}_links.tsv.bz2'):
+            if len(r) >= 2 and r[0] in ids:
+                links.setdefault(r[0], []).append(r[1])
+        found = load_texts(target, {i for v in links.values() for i in v})
+        return {i: next((found[x] for x in v if x in found), None) for i, v in links.items()}
+
+    trs = linked('tur') if lang != 'tr' else {}
+    ens = linked('eng') if lang != 'en' else {}
+    return {i: (texts[i], trs.get(i), ens.get(i)) for i in ids if i in texts}
 
 
 def needed_ids(lang: str, corr: dict) -> set[str]:
     return {c['x'].split(':', 1)[1] for c in corr['words'].get(lang, {}).values() if c.get('x')}
 
 
-def apply_to_words(lang: str, words: list[dict], corr: dict, lookup: dict[str, tuple[str, str | None]]) -> int:
+def apply_to_words(lang: str, words: list[dict], corr: dict, lookup: dict[str, tuple[str, str | None, str | None]]) -> int:
     wc = corr['words'].get(lang, {})
     sc = corr['sentences'].get(lang, {})
     by = {w['w']: w for w in words}
@@ -70,8 +77,9 @@ def apply_to_words(lang: str, words: list[dict], corr: dict, lookup: dict[str, t
                 sid = c['x'].split(':', 1)[1]
                 if sid not in lookup:
                     raise ValueError(f'{lang} {lemma}: {c["x"]} Tatoeba verisinde bulunamadı')
-                t, tr = lookup[sid]
-                w['x'] = {'t': t, 'src': c['x'], **({'tr': tr} if tr else {})}
+                t, tr, en = lookup[sid]
+                # İngilizce çeviri yalnızca Türkçe çeviri yoksa eklenir (Türkçe paket); diğer paketler değişmez
+                w['x'] = {'t': t, 'src': c['x'], **({'tr': tr} if tr else {'en': en} if en else {})}
         changed += 1
     for w in words:
         x = w.get('x')

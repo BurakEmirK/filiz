@@ -10,18 +10,18 @@
   "words-6.json",
   "words-7.json"
  ],
- "built": "2026-11-19",
+ "built": "2026-11-25",
  "stats": {
   "words": 3200,
-  "pivot-en": 0.578,
+  "pivot-en": 0.574,
   "audio": 0.186,
   "example": 0.989,
-  "example_tr_human": 0.745,
+  "example_tr_human": 0.744,
   "emoji": 0.109,
   "ipa": 0.995,
-  "curated": 0.008,
-  "vikisozluk-tr": 0.22,
-  "mt": 0.155,
+  "curated": 0.014,
+  "vikisozluk-tr": 0.219,
+  "mt": 0.154,
   "yok": 0.039
  },
  "pos": {

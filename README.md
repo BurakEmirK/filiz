@@ -87,7 +87,10 @@ Arayüz ve kullanılabilirlik kuralları: [.claude/skills/filiz-usability/SKILL.
 
 Yöntem kısaca: wordfreq sıklık listesindeki biçimler Vikisözlük'ün çekim bilgisiyle sözlük biçimlerine
 birleştirilir ("воду, воды" → "вода"), kısaltma/eski yazım ilişkileri sayılmaz, ilk anlamı küfür/hakaret olan
-kelimeler alınmaz. Türkçe anlam sırasıyla Türkçe Vikisözlük, İngilizce Vikisözlük çeviri tablosu, İngilizce
+kelimeler alınmaz. Kelimenin biçim listesine eski yazımlar, ağız biçimleri, yazım hataları, kısaltmalar, Roma rakamları
+ve "alternative form" girişleri alınmaz (ör. "one" için "I", "my" için "me"); standart çeşitler
+(`scripts/content/overrides.py`, `KEEP_FORMS`) korunur. Elle yapılan düzeltmeler `scripts/content/corrections.json`
+dosyasındadır ve her yeniden üretimde uygulanır. Türkçe anlam sırasıyla Türkçe Vikisözlük, İngilizce Vikisözlük çeviri tablosu, İngilizce
 üzerinden eşleşme ve son çare makine çevirisinden gelir; kaynağı her kelimede gösterilir.
 
 Paketleri yeniden üretmek için (yaklaşık 3,4 GB veri indirilir, işleme ~10 dk):
